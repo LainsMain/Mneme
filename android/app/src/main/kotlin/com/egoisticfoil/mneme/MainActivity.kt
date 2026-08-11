@@ -2,19 +2,27 @@ package com.egoisticfoil.mneme
 
 import android.content.DialogInterface
 import android.hardware.biometrics.BiometricPrompt
+import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.os.CancellationSignal
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.activity.result.contract.ActivityResultContracts.TakePicture
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -25,6 +33,7 @@ import com.egoisticfoil.mneme.ui.diary.DiaryViewModel
 import com.egoisticfoil.mneme.ui.settings.SettingsViewModel
 import com.egoisticfoil.mneme.ui.settings.AppLockScreen
 import com.egoisticfoil.mneme.ui.theme.MnemeTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +56,23 @@ class MainActivity : ComponentActivity() {
             ) {
                 var unlocked by remember {
                     mutableStateOf(!settingsState.settings.appLockEnabled)
+                }
+                val diaryViewModel: DiaryViewModel = viewModel(
+                    factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
+                )
+                val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
+                var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+                val photoPicker = rememberLauncherForActivityResult(PickMultipleVisualMedia(20)) { uris ->
+                    unlocked = true
+                    diaryViewModel.addPhotos(uris)
+                }
+                val camera = rememberLauncherForActivityResult(TakePicture()) { saved ->
+                    val capturedUri = pendingCameraUri?.let(Uri::parse)
+                    pendingCameraUri = null
+                    unlocked = true
+                    if (saved && capturedUri != null) {
+                        diaryViewModel.addPhotos(listOf(capturedUri))
+                    }
                 }
                 val lifecycleOwner = LocalLifecycleOwner.current
                 val appLockEnabled by rememberUpdatedState(settingsState.settings.appLockEnabled)
@@ -77,10 +103,6 @@ class MainActivity : ComponentActivity() {
                     )
                     return@MnemeTheme
                 }
-                val diaryViewModel: DiaryViewModel = viewModel(
-                    factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
-                )
-                val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
                 MnemeApp(
                     state = state,
                     onPreviousDay = diaryViewModel::previousDay,
@@ -88,7 +110,17 @@ class MainActivity : ComponentActivity() {
                     onToday = diaryViewModel::today,
                     onSelectDate = diaryViewModel::selectDate,
                     onDocumentChange = diaryViewModel::updateDocument,
-                    onAddPhotos = diaryViewModel::addPhotos,
+                    onChoosePhotos = {
+                        photoPicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
+                    },
+                    onTakePhoto = {
+                        val uri = runCatching { createCameraUri() }.getOrNull()
+                        if (uri != null) {
+                            pendingCameraUri = uri.toString()
+                            runCatching { camera.launch(uri) }
+                                .onFailure { pendingCameraUri = null }
+                        }
+                    },
                     onMakePhotoPrimary = diaryViewModel::makePhotoPrimary,
                     onDeletePhoto = diaryViewModel::deletePhoto,
                     onSetLocation = diaryViewModel::setLocation,
@@ -130,5 +162,11 @@ class MainActivity : ComponentActivity() {
                 }
             },
         )
+    }
+
+    private fun createCameraUri(): Uri {
+        val cameraDirectory = File(cacheDir, "camera").apply { mkdirs() }
+        val photo = File.createTempFile("mneme-", ".jpg", cameraDirectory)
+        return FileProvider.getUriForFile(this, "$packageName.files", photo)
     }
 }

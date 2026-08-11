@@ -1,6 +1,5 @@
 package com.egoisticfoil.mneme.ui
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -85,7 +84,8 @@ fun MnemeApp(
     onToday: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onDocumentChange: (com.egoisticfoil.mneme.model.RichTextDocument) -> Unit,
-    onAddPhotos: (List<Uri>) -> Unit,
+    onChoosePhotos: () -> Unit,
+    onTakePhoto: () -> Unit,
     onMakePhotoPrimary: (String) -> Unit,
     onDeletePhoto: (String) -> Unit,
     onSetLocation: (String, Double?, Double?) -> Unit,
@@ -246,7 +246,8 @@ fun MnemeApp(
                     onNextDay = onNextDay,
                     onSelectDate = onSelectDate,
                     onDocumentChange = onDocumentChange,
-                    onAddPhotos = onAddPhotos,
+                    onChoosePhotos = onChoosePhotos,
+                    onTakePhoto = onTakePhoto,
                     onMakePhotoPrimary = onMakePhotoPrimary,
                     onDeletePhoto = onDeletePhoto,
                     onSetLocation = onSetLocation,
