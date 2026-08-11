@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Keep the active journal cursor visible above the keyboard and formatting controls while typing.
+- Reserve layout space for the formatting bar and retain free swipe-scrolling through long entries.
+- Preserve camera and gallery results across app locking so accepted photos return to and import into the active entry without another PIN prompt.
+
 ## 0.1.2
 
 - Re-lock the diary whenever Mneme leaves the foreground, including when the user returns to the Home screen.

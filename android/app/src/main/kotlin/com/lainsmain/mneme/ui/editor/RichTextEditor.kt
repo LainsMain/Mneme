@@ -6,9 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -30,12 +34,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -62,6 +70,12 @@ fun RichTextEditor(
     onDocumentChange: (RichTextDocument) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val bringIntoViewRequester = remember(documentKey) { BringIntoViewRequester() }
+    var textLayoutResult by remember(documentKey) { mutableStateOf<TextLayoutResult?>(null) }
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val cursorClearance = with(density) { 18.dp.toPx() }
+
     LaunchedEffect(documentKey, document.text) {
         if (state.fieldValue.text != document.text) {
             state.fieldValue = state.fieldValue.copy(
@@ -69,6 +83,29 @@ fun RichTextEditor(
                 selection = TextRange(document.text.length),
             )
         }
+    }
+
+    LaunchedEffect(
+        state.fieldValue.text,
+        state.fieldValue.selection,
+        state.isFocused,
+        imeBottom,
+        textLayoutResult,
+    ) {
+        if (!state.isFocused) return@LaunchedEffect
+        withFrameNanos { }
+        val layout = textLayoutResult ?: return@LaunchedEffect
+        val layoutTextLength = layout.layoutInput.text.length
+        val offset = state.fieldValue.selection.end.coerceIn(0, layoutTextLength)
+        val cursor = layout.getCursorRect(offset)
+        bringIntoViewRequester.bringIntoView(
+            Rect(
+                left = cursor.left,
+                top = cursor.top,
+                right = cursor.right.coerceAtLeast(cursor.left + 1f),
+                bottom = cursor.bottom + cursorClearance,
+            ),
+        )
     }
 
     Column(
@@ -92,6 +129,7 @@ fun RichTextEditor(
                 }
             },
             modifier = Modifier
+                .bringIntoViewRequester(bringIntoViewRequester)
                 .fillMaxWidth()
                 .heightIn(min = if (state.fieldValue.text.isEmpty()) 180.dp else 72.dp)
                 .onFocusChanged { state.isFocused = it.isFocused },
@@ -105,6 +143,7 @@ fun RichTextEditor(
                 autoCorrectEnabled = true,
                 keyboardType = KeyboardType.Text,
             ),
+            onTextLayout = { textLayoutResult = it },
             decorationBox = { innerTextField ->
                 Box(Modifier.fillMaxWidth()) {
                     if (state.fieldValue.text.isEmpty()) {
