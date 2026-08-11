@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Mneme Backup API
-  version: 0.1.0
+  version: 0.1.7
   description: Opaque object API for end-to-end encrypted diary backups.
 servers:
   - url: https://mneme.example.com/v1
@@ -77,6 +77,62 @@ paths:
           description: Current opaque encrypted manifest for this device.
           content:
             application/octet-stream: {}
+  /manifests/{deviceId}/history:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: Newest retained encrypted manifest pointers for this device.
+  /manifests/{deviceId}/history/{revision}:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: revision
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      responses:
+        "200":
+          description: Opaque encrypted manifest at the requested revision.
+          content:
+            application/octet-stream: {}
+  /manifests/{deviceId}/history/{revision}/references:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: revision
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    put:
+      description: Store the opaque encrypted-object hashes referenced by this manifest.
+      responses:
+        "200":
+          description: Reference index stored.
+  /storage:
+    get:
+      responses:
+        "200":
+          description: Ciphertext object counts, bytes, and retained manifest counts.
+  /storage/gc:
+    post:
+      description: Prune old histories and proven-unreferenced ciphertext after the safety grace period.
+      responses:
+        "200":
+          description: Cleanup result and updated storage totals.
 components:
   securitySchemes:
     bearerToken:

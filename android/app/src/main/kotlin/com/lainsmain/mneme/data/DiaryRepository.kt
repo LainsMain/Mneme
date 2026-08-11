@@ -82,6 +82,13 @@ data class DiaryAttachment(
 
 data class PhotoImportResult(val imported: Int, val failed: Int)
 
+data class MonthlyRecap(
+    val id: String,
+    val month: YearMonth,
+    val document: RichTextDocument,
+    val revision: Long,
+)
+
 class DiaryRepository(
     private val context: Context,
     private val diaryDao: DiaryDao,
@@ -140,6 +147,13 @@ class DiaryRepository(
         diaryDao.observeAttachments(date.toString()).map { attachments ->
             attachments.map { it.toModel() }
         }
+
+    fun observeRecap(month: YearMonth): Flow<MonthlyRecap?> =
+        diaryDao.observeRecap(month.toString()).map { entity -> entity?.toModel() }
+
+    fun observeRecapMonths(): Flow<Set<YearMonth>> = diaryDao.observeRecapMonths().map { months ->
+        months.mapNotNull { runCatching { YearMonth.parse(it) }.getOrNull() }.toSet()
+    }
 
     suspend fun importPhotos(pageId: String, uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, "attachments").apply { mkdirs() }
@@ -232,6 +246,26 @@ class DiaryRepository(
         return page.toModel()
     }
 
+    suspend fun saveRecap(
+        month: YearMonth,
+        existing: MonthlyRecap?,
+        document: RichTextDocument,
+    ): MonthlyRecap {
+        val now = clock.millis()
+        val recap = MonthlyRecapEntity(
+            id = existing?.id ?: UUID.randomUUID().toString(),
+            yearMonth = month.toString(),
+            documentJson = json.encodeToString(RichTextDocument.serializer(), document),
+            plainText = document.text,
+            createdAtEpochMillis = existing?.let { diaryDao.recapById(it.id)?.createdAtEpochMillis } ?: now,
+            updatedAtEpochMillis = now,
+            revision = (existing?.revision ?: 0) + 1,
+        )
+        diaryDao.upsertRecap(recap)
+        BackupWorker.scheduleSoon(context)
+        return recap.toModel()
+    }
+
     suspend fun makePhotoPrimary(attachmentId: String) = withContext(Dispatchers.IO) {
         diaryDao.makeAttachmentPrimary(attachmentId)
         BackupWorker.scheduleSoon(context)
@@ -301,6 +335,15 @@ class DiaryRepository(
         focalLength = focalLength,
         caption = caption,
         sortOrder = sortOrder,
+    )
+
+    private fun MonthlyRecapEntity.toModel() = MonthlyRecap(
+        id = id,
+        month = YearMonth.parse(yearMonth),
+        document = runCatching {
+            json.decodeFromString(RichTextDocument.serializer(), documentJson)
+        }.getOrElse { RichTextDocument(plainText) },
+        revision = revision,
     )
 
     private fun displayName(uri: Uri): String? = context.contentResolver

@@ -62,6 +62,13 @@ class AppSettingsRepository(private val context: Context) {
         _settings.value = _settings.value.copy(colorPalette = palette)
     }
 
+    fun backupNotificationPermissionAsked(): Boolean =
+        preferences.getBoolean(KEY_BACKUP_NOTIFICATION_PERMISSION_ASKED, false)
+
+    fun markBackupNotificationPermissionAsked() {
+        preferences.edit().putBoolean(KEY_BACKUP_NOTIFICATION_PERMISSION_ASKED, true).apply()
+    }
+
     fun setPin(pin: String) {
         require(pin.length in 4..8 && pin.all(Char::isDigit)) { "Use a 4–8 digit PIN." }
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
@@ -258,5 +265,6 @@ class AppSettingsRepository(private val context: Context) {
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_APP_LOCK = "app_lock"
         const val KEY_BIOMETRIC = "biometric"
+        const val KEY_BACKUP_NOTIFICATION_PERMISSION_ASKED = "backup_notification_permission_asked"
     }
 }

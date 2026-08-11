@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +59,8 @@ fun MonthScreen(
     selectedDate: LocalDate,
     jumpKey: Int,
     onOpenDay: (LocalDate) -> Unit,
+    recapMonths: Set<YearMonth>,
+    onOpenRecap: (YearMonth) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val anchor = remember { YearMonth.from(selectedDate) }
@@ -87,6 +90,8 @@ fun MonthScreen(
                 summaries = summaries,
                 selectedDate = selectedDate,
                 onOpenDay = onOpenDay,
+                hasRecap = month in recapMonths,
+                onOpenRecap = { onOpenRecap(month) },
             )
         }
     }
@@ -98,6 +103,8 @@ private fun MonthSection(
     summaries: Map<LocalDate, DaySummary>,
     selectedDate: LocalDate,
     onOpenDay: (LocalDate) -> Unit,
+    hasRecap: Boolean,
+    onOpenRecap: () -> Unit,
 ) {
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
     Column(
@@ -105,12 +112,18 @@ private fun MonthSection(
             .fillMaxWidth()
             .padding(horizontal = 6.dp),
     ) {
-        Text(
-            text = month.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale)),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 8.dp, top = 22.dp, bottom = 10.dp),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 16.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = month.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale)),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onOpenRecap) { Text(if (hasRecap) "Read recap" else "Write recap") }
+        }
         monthCells(month).chunked(7).forEach { week ->
             Row(
                 modifier = Modifier.fillMaxWidth(),

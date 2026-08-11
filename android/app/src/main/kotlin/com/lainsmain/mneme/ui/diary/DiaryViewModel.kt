@@ -9,6 +9,7 @@ import com.lainsmain.mneme.data.DiaryRepository
 import com.lainsmain.mneme.data.DaySummary
 import com.lainsmain.mneme.data.DiaryAttachment
 import com.lainsmain.mneme.data.DatedAttachment
+import com.lainsmain.mneme.data.MonthlyRecap
 import com.lainsmain.mneme.data.PlaceSearchRepository
 import com.lainsmain.mneme.data.PlaceSuggestion
 import com.lainsmain.mneme.model.RichTextDocument
@@ -44,6 +45,12 @@ data class DiaryUiState(
     val placeSuggestions: List<PlaceSuggestion> = emptyList(),
     val isSearchingPlaces: Boolean = false,
     val placeSearchMessage: String? = null,
+    val recapMonth: YearMonth? = null,
+    val recapDocument: RichTextDocument = RichTextDocument(),
+    val recapIsLoading: Boolean = false,
+    val recapIsSaving: Boolean = false,
+    val recapSavedRevision: Long = 0,
+    val recapMonths: Set<YearMonth> = emptySet(),
 )
 
 data class DiaryLocation(
@@ -78,11 +85,16 @@ class DiaryViewModel(
     private var observeAttachmentsJob: Job? = null
     private var observeAllDaysJob: Job? = null
     private var observeMediaJob: Job? = null
+    private var observeRecapJob: Job? = null
+    private var observeRecapMonthsJob: Job? = null
+    private var recapSaveJob: Job? = null
     private var placeSearchJob: Job? = null
     private var automaticLocationJob: Job? = null
     private var automaticLocationKey: String? = null
     private var attachmentsLoaded = false
     private var dirty = false
+    private var recapDirty = false
+    private var currentRecap: MonthlyRecap? = null
 
     init {
         observeDate(today)
@@ -103,6 +115,41 @@ class DiaryViewModel(
     fun currentMonth() {
         showMonth(YearMonth.from(today))
         _uiState.value = _uiState.value.copy(calendarJumpKey = _uiState.value.calendarJumpKey + 1)
+    }
+
+    fun openRecap(month: YearMonth) {
+        if (_uiState.value.recapMonth == month) return
+        recapSaveJob?.cancel()
+        viewModelScope.launch {
+            saveRecapImmediately()
+            observeRecap(month)
+        }
+    }
+
+    fun closeRecap() {
+        recapSaveJob?.cancel()
+        viewModelScope.launch {
+            saveRecapImmediately()
+            observeRecapJob?.cancel()
+            currentRecap = null
+            recapDirty = false
+            _uiState.value = _uiState.value.copy(recapMonth = null)
+        }
+    }
+
+    fun previousRecapMonth() = _uiState.value.recapMonth?.let { openRecap(it.minusMonths(1)) }
+
+    fun nextRecapMonth() = _uiState.value.recapMonth?.let { openRecap(it.plusMonths(1)) }
+
+    fun updateRecapDocument(document: RichTextDocument) {
+        val month = _uiState.value.recapMonth ?: return
+        recapDirty = true
+        _uiState.value = _uiState.value.copy(recapDocument = document, recapIsSaving = true)
+        recapSaveJob?.cancel()
+        recapSaveJob = viewModelScope.launch {
+            delay(450)
+            saveRecap(month, document)
+        }
     }
 
     fun showMonth(month: YearMonth) {
@@ -282,6 +329,37 @@ class DiaryViewModel(
                 _uiState.value = _uiState.value.copy(allMedia = media)
             }
         }
+        observeRecapMonthsJob = viewModelScope.launch {
+            repository.observeRecapMonths().collect { months ->
+                _uiState.value = _uiState.value.copy(recapMonths = months)
+            }
+        }
+    }
+
+    private fun observeRecap(month: YearMonth) {
+        observeRecapJob?.cancel()
+        currentRecap = null
+        recapDirty = false
+        _uiState.value = _uiState.value.copy(
+            recapMonth = month,
+            recapDocument = RichTextDocument(),
+            recapIsLoading = true,
+            recapIsSaving = false,
+            recapSavedRevision = 0,
+        )
+        observeRecapJob = viewModelScope.launch {
+            repository.observeRecap(month).collect { recap ->
+                currentRecap = recap
+                if (!recapDirty) {
+                    _uiState.value = _uiState.value.copy(
+                        recapDocument = recap?.document ?: RichTextDocument(),
+                        recapIsLoading = false,
+                        recapIsSaving = false,
+                        recapSavedRevision = recap?.revision ?: 0,
+                    )
+                }
+            }
+        }
     }
 
     private fun effectiveLocation(
@@ -362,6 +440,25 @@ class DiaryViewModel(
     private suspend fun saveImmediately() {
         if (!dirty) return
         save(_uiState.value.selectedDate, _uiState.value.document)
+    }
+
+    private suspend fun saveRecapImmediately() {
+        if (!recapDirty) return
+        val month = _uiState.value.recapMonth ?: return
+        saveRecap(month, _uiState.value.recapDocument)
+    }
+
+    private suspend fun saveRecap(month: YearMonth, document: RichTextDocument) {
+        if (month != _uiState.value.recapMonth) return
+        val saved = repository.saveRecap(month, currentRecap, document)
+        currentRecap = saved
+        if (_uiState.value.recapDocument == document) {
+            recapDirty = false
+            _uiState.value = _uiState.value.copy(
+                recapIsSaving = false,
+                recapSavedRevision = saved.revision,
+            )
+        }
     }
 
     private suspend fun pageForLocation(): DiaryPage {
