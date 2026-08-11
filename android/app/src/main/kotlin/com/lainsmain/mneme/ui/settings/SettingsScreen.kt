@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudDone
@@ -27,16 +28,19 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,16 +48,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lainsmain.mneme.data.ThemePreference
 import com.lainsmain.mneme.data.ColorPalette
 import com.lainsmain.mneme.BuildConfig
+import com.lainsmain.mneme.data.ReleaseInfo
+import com.lainsmain.mneme.data.UpdateDownloadPhase
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun SettingsScreen(
@@ -67,14 +76,21 @@ fun SettingsScreen(
     onConnect: (String, String) -> Unit,
     onDisconnect: () -> Unit,
     onBackupNow: () -> Unit,
+    onAcknowledgeRecoveryCode: () -> Unit,
+    onRestoreBackup: (String) -> Unit,
     onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (ReleaseInfo) -> Unit,
+    onInstallDownloadedUpdate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var serverUrl by remember { mutableStateOf(state.settings.serverUrl) }
     var token by remember { mutableStateOf(state.settings.serverToken) }
     var pin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
-    val uriHandler = LocalUriHandler.current
+    var recoveryCodeVisible by remember { mutableStateOf(false) }
+    var restoreDialogVisible by remember { mutableStateOf(false) }
+    var restoreCode by remember { mutableStateOf("") }
+    val clipboard = LocalClipboardManager.current
 
     LaunchedEffect(state.settings.serverUrl, state.settings.serverToken) {
         serverUrl = state.settings.serverUrl
@@ -343,6 +359,13 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        state.lastSuccessfulBackupAt?.let {
+                            "Last successful backup: ${DateFormat.getDateTimeInstance().format(Date(it))}"
+                        } ?: "No successful portable backup yet.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Button(
                         onClick = onBackupNow,
                         enabled = state.backupStatus != BackupStatus.Running,
@@ -360,6 +383,73 @@ fun SettingsScreen(
                             message,
                             style = MaterialTheme.typography.bodySmall,
                             color = if (state.backupStatus == BackupStatus.Error) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        )
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 2.dp))
+                    Text(
+                        "Recovery code",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "This code is the only way to decrypt your server backup after losing your phone. " +
+                            "Keep it somewhere outside Mneme; the server token cannot replace it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.recoveryCodeNeedsSaving) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    if (recoveryCodeVisible) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            SelectionContainer {
+                                Text(
+                                    state.recoveryCode,
+                                    modifier = Modifier.padding(14.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { recoveryCodeVisible = !recoveryCodeVisible },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(if (recoveryCodeVisible) "Hide code" else "Reveal code") }
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(state.recoveryCode))
+                                onAcknowledgeRecoveryCode()
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Copy code") }
+                    }
+                    OutlinedButton(
+                        onClick = { restoreDialogVisible = true },
+                        enabled = state.restoreStatus != RestoreStatus.Running,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (state.restoreStatus == RestoreStatus.Running) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        }
+                        Text("Restore on this device", Modifier.padding(start = 8.dp))
+                    }
+                    state.restoreMessage?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.restoreStatus == RestoreStatus.Error) {
                                 MaterialTheme.colorScheme.error
                             } else {
                                 MaterialTheme.colorScheme.primary
@@ -414,17 +504,80 @@ fun SettingsScreen(
                     Text("Check for updates", Modifier.padding(start = 8.dp))
                 }
                 state.availableUpdate?.let { release ->
+                    if (state.updateDownloadPhase == UpdateDownloadPhase.Downloading) {
+                        LinearProgressIndicator(
+                            progress = { (state.updateDownloadProgress ?: 0) / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    state.updateDownloadMessage?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.updateDownloadPhase == UpdateDownloadPhase.Error) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        )
+                    }
                     OutlinedButton(
-                        onClick = { uriHandler.openUri(release.downloadUrl) },
+                        onClick = {
+                            if (state.updateDownloadPhase == UpdateDownloadPhase.Downloaded) {
+                                onInstallDownloadedUpdate()
+                            } else {
+                                onDownloadUpdate(release)
+                            }
+                        },
+                        enabled = state.updateDownloadPhase != UpdateDownloadPhase.Downloading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Rounded.Download, contentDescription = null)
-                        Text("Download ${release.version}", Modifier.padding(start = 8.dp))
+                        Text(
+                            if (state.updateDownloadPhase == UpdateDownloadPhase.Downloaded) {
+                                "Install ${release.version}"
+                            } else {
+                                "Download ${release.version}"
+                            },
+                            Modifier.padding(start = 8.dp),
+                        )
                     }
                 }
             }
         }
         Spacer(Modifier.height(36.dp))
+    }
+
+    if (restoreDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { restoreDialogVisible = false },
+            title = { Text("Restore encrypted backup") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Use this on a new, empty Mneme installation. Existing local entries will never be overwritten.",
+                    )
+                    OutlinedTextField(
+                        value = restoreCode,
+                        onValueChange = { restoreCode = it.uppercase() },
+                        label = { Text("Recovery code") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        restoreDialogVisible = false
+                        onRestoreBackup(restoreCode)
+                    },
+                    enabled = restoreCode.count(Char::isLetterOrDigit) == 64,
+                ) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { restoreDialogVisible = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

@@ -78,6 +78,9 @@ class MainActivity : ComponentActivity() {
                 val appLockEnabled by rememberUpdatedState(settingsState.settings.appLockEnabled)
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_START) {
+                            settingsViewModel.onAppForegrounded()
+                        }
                         if (
                             event == Lifecycle.Event.ON_STOP &&
                             appLockEnabled &&
@@ -141,7 +144,11 @@ class MainActivity : ComponentActivity() {
                     onConnectServer = settingsViewModel::connect,
                     onDisconnectServer = settingsViewModel::disconnect,
                     onBackupNow = settingsViewModel::backupNow,
+                    onAcknowledgeRecoveryCode = settingsViewModel::acknowledgeRecoveryCode,
+                    onRestoreBackup = settingsViewModel::restoreBackup,
                     onCheckForUpdates = { settingsViewModel.checkForUpdates() },
+                    onDownloadUpdate = settingsViewModel::downloadUpdate,
+                    onInstallDownloadedUpdate = settingsViewModel::installDownloadedUpdate,
                 )
             }
         }

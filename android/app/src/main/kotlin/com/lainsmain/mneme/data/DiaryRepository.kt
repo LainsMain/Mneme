@@ -208,6 +208,7 @@ class DiaryRepository(
             }
             if (result.isSuccess) imported++ else failed++
         }
+        if (imported > 0) BackupWorker.scheduleSoon(context)
         PhotoImportResult(imported = imported, failed = failed)
     }
 
@@ -227,11 +228,13 @@ class DiaryRepository(
             locationIsManual = existing?.locationIsManual ?: false,
         )
         diaryDao.upsertPage(page)
+        BackupWorker.scheduleSoon(context)
         return page.toModel()
     }
 
     suspend fun makePhotoPrimary(attachmentId: String) = withContext(Dispatchers.IO) {
         diaryDao.makeAttachmentPrimary(attachmentId)
+        BackupWorker.scheduleSoon(context)
     }
 
     suspend fun deletePhoto(attachmentId: String) = withContext(Dispatchers.IO) {
@@ -239,6 +242,7 @@ class DiaryRepository(
         diaryDao.deleteAttachmentById(attachmentId)
         File(attachment.encryptedFileName).delete()
         attachment.thumbnailFileName?.let { File(it).delete() }
+        BackupWorker.scheduleSoon(context)
     }
 
     suspend fun setManualLocation(
@@ -248,14 +252,17 @@ class DiaryRepository(
         longitude: Double?,
     ) = withContext(Dispatchers.IO) {
         diaryDao.setManualLocation(pageId, name, latitude, longitude, clock.millis())
+        BackupWorker.scheduleSoon(context)
     }
 
     suspend fun setAutomaticLocationName(pageId: String, name: String?) = withContext(Dispatchers.IO) {
         diaryDao.setAutomaticLocationName(pageId, name, clock.millis())
+        BackupWorker.scheduleSoon(context)
     }
 
     suspend fun usePrimaryPhotoLocation(pageId: String) = withContext(Dispatchers.IO) {
         diaryDao.clearManualLocation(pageId, clock.millis())
+        BackupWorker.scheduleSoon(context)
     }
 
     private fun DiaryPageEntity.toModel() = DiaryPage(
