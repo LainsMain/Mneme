@@ -1,5 +1,6 @@
 package com.lainsmain.mneme.ui.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -12,6 +13,9 @@ import com.lainsmain.mneme.data.ReleaseInfo
 import com.lainsmain.mneme.data.SemanticVersion
 import com.lainsmain.mneme.data.UpdateRepository
 import com.lainsmain.mneme.data.UpdateDownloadPhase
+import com.lainsmain.mneme.data.DiaryExportRepository
+import com.lainsmain.mneme.data.RemoteManifestPointer
+import com.lainsmain.mneme.data.ServerStorageStats
 import com.lainsmain.mneme.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,6 +29,8 @@ enum class ServerConnectionStatus { Idle, Testing, Connected, Error }
 enum class BackupStatus { Idle, Running, Complete, Error }
 enum class RestoreStatus { Idle, Running, Complete, Error }
 enum class UpdateStatus { Idle, Checking, Current, Available, Error }
+enum class ExportStatus { Idle, Running, Complete, Error }
+enum class MaintenanceStatus { Idle, Loading, Running, Complete, Error }
 
 data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
@@ -46,12 +52,20 @@ data class SettingsUiState(
     val updateDownloadPhase: UpdateDownloadPhase = UpdateDownloadPhase.Idle,
     val updateDownloadProgress: Int? = null,
     val updateDownloadMessage: String? = null,
+    val consecutiveBackupFailures: Int = 0,
+    val serverSnapshots: List<RemoteManifestPointer> = emptyList(),
+    val serverStorage: ServerStorageStats? = null,
+    val maintenanceStatus: MaintenanceStatus = MaintenanceStatus.Idle,
+    val maintenanceMessage: String? = null,
+    val exportStatus: ExportStatus = ExportStatus.Idle,
+    val exportMessage: String? = null,
 )
 
 class SettingsViewModel(
     private val repository: AppSettingsRepository,
     private val backupRepository: BackupRepository,
     private val updateRepository: UpdateRepository,
+    private val exportRepository: DiaryExportRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         SettingsUiState(
@@ -60,6 +74,7 @@ class SettingsViewModel(
             recoveryCode = backupRepository.recoveryCode(),
             recoveryCodeNeedsSaving = backupRepository.recoveryCodeNeedsSaving(),
             backupMessage = backupRepository.lastBackupError(),
+            consecutiveBackupFailures = backupRepository.consecutiveBackupFailures(),
         ),
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -86,7 +101,10 @@ class SettingsViewModel(
         }
         checkForUpdates(force = true)
         monitorUpdateDownload()
-        if (repository.settings.value.serverConnected) refreshServerVersion()
+        if (repository.settings.value.serverConnected) {
+            refreshServerVersion()
+            refreshServerOverview()
+        }
     }
 
     fun setTheme(theme: ThemePreference) = repository.setTheme(theme)
@@ -101,7 +119,9 @@ class SettingsViewModel(
             lastSuccessfulBackupAt = backupRepository.lastSuccessfulBackupAt(),
             recoveryCode = backupRepository.recoveryCode(),
             recoveryCodeNeedsSaving = backupRepository.recoveryCodeNeedsSaving(),
+            consecutiveBackupFailures = backupRepository.consecutiveBackupFailures(),
         )
+        if (repository.settings.value.serverConnected) refreshServerOverview()
     }
 
     fun savePin(pin: String) {
@@ -140,6 +160,7 @@ class SettingsViewModel(
                             connectionMessage = "Connected to your Mneme server.",
                         )
                         checkForUpdates(force = false)
+                        refreshServerOverview()
                     },
                     onFailure = { error ->
                         _uiState.value = _uiState.value.copy(
@@ -216,14 +237,14 @@ class SettingsViewModel(
         _uiState.value = _uiState.value.copy(recoveryCodeNeedsSaving = false)
     }
 
-    fun restoreBackup(recoveryCode: String) {
+    fun restoreBackup(recoveryCode: String, snapshot: RemoteManifestPointer? = null) {
         if (_uiState.value.restoreStatus == RestoreStatus.Running) return
         _uiState.value = _uiState.value.copy(
             restoreStatus = RestoreStatus.Running,
             restoreMessage = "Downloading and decrypting your diary…",
         )
         viewModelScope.launch {
-            backupRepository.restoreFromServer(recoveryCode).fold(
+            backupRepository.restoreFromServer(recoveryCode, snapshot).fold(
                 onSuccess = { result ->
                     _uiState.value = _uiState.value.copy(
                         recoveryCode = backupRepository.recoveryCode(),
@@ -237,6 +258,80 @@ class SettingsViewModel(
                     _uiState.value = _uiState.value.copy(
                         restoreStatus = RestoreStatus.Error,
                         restoreMessage = error.message ?: "Restore failed.",
+                    )
+                },
+            )
+        }
+    }
+
+    fun exportDiary(destination: Uri) {
+        if (_uiState.value.exportStatus == ExportStatus.Running) return
+        _uiState.value = _uiState.value.copy(
+            exportStatus = ExportStatus.Running,
+            exportMessage = "Building your portable archive…",
+        )
+        viewModelScope.launch {
+            exportRepository.export(destination).fold(
+                onSuccess = { result ->
+                    _uiState.value = _uiState.value.copy(
+                        exportStatus = ExportStatus.Complete,
+                        exportMessage = "Exported ${result.entryCount} entries, ${result.photoCount} photos, " +
+                            "and ${result.recapCount} recaps.",
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        exportStatus = ExportStatus.Error,
+                        exportMessage = error.message ?: "Could not export your diary.",
+                    )
+                },
+            )
+        }
+    }
+
+    fun refreshServerOverview() {
+        if (!repository.settings.value.serverConnected) return
+        _uiState.value = _uiState.value.copy(maintenanceStatus = MaintenanceStatus.Loading)
+        viewModelScope.launch {
+            backupRepository.serverOverview().fold(
+                onSuccess = { overview ->
+                    _uiState.value = _uiState.value.copy(
+                        serverSnapshots = overview.snapshots,
+                        serverStorage = overview.storage,
+                        maintenanceStatus = MaintenanceStatus.Idle,
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        maintenanceStatus = MaintenanceStatus.Error,
+                        maintenanceMessage = error.message ?: "Could not read server storage.",
+                    )
+                },
+            )
+        }
+    }
+
+    fun collectServerGarbage() {
+        if (_uiState.value.maintenanceStatus == MaintenanceStatus.Running) return
+        _uiState.value = _uiState.value.copy(
+            maintenanceStatus = MaintenanceStatus.Running,
+            maintenanceMessage = "Checking encrypted server objects…",
+        )
+        viewModelScope.launch {
+            backupRepository.collectServerGarbage().fold(
+                onSuccess = { result ->
+                    _uiState.value = _uiState.value.copy(
+                        maintenanceStatus = MaintenanceStatus.Complete,
+                        maintenanceMessage = "Removed ${result.deletedObjectCount} unused objects and " +
+                            "${result.prunedManifestCount} old snapshots; reclaimed ${formatBytes(result.reclaimedBytes)}.",
+                        serverStorage = result.storage,
+                    )
+                    refreshServerOverview()
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        maintenanceStatus = MaintenanceStatus.Error,
+                        maintenanceMessage = error.message ?: "Server cleanup failed.",
                     )
                 },
             )
@@ -301,6 +396,9 @@ class SettingsViewModel(
         _uiState.value = _uiState.value.copy(
             connectionStatus = ServerConnectionStatus.Idle,
             connectionMessage = "Server disconnected.",
+            serverSnapshots = emptyList(),
+            serverStorage = null,
+            maintenanceMessage = null,
         )
     }
 
@@ -325,12 +423,15 @@ class SettingsViewModel(
                             lastSuccessfulBackupAt = backupRepository.lastSuccessfulBackupAt(),
                             recoveryCode = backupRepository.recoveryCode(),
                             recoveryCodeNeedsSaving = backupRepository.recoveryCodeNeedsSaving(),
+                            consecutiveBackupFailures = 0,
                         )
+                        refreshServerOverview()
                     },
                     onFailure = { error ->
                         _uiState.value = _uiState.value.copy(
                             backupStatus = BackupStatus.Error,
                             backupMessage = error.message ?: "Backup failed.",
+                            consecutiveBackupFailures = backupRepository.consecutiveBackupFailures(),
                         )
                     },
                 )
@@ -344,9 +445,17 @@ class SettingsViewModel(
         private val repository: AppSettingsRepository,
         private val backupRepository: BackupRepository,
         private val updateRepository: UpdateRepository,
+        private val exportRepository: DiaryExportRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(repository, backupRepository, updateRepository) as T
+            SettingsViewModel(repository, backupRepository, updateRepository, exportRepository) as T
     }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    else -> "%.2f GB".format(bytes / 1024.0 / 1024.0 / 1024.0)
 }

@@ -27,6 +27,10 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,8 +65,10 @@ import com.lainsmain.mneme.data.ColorPalette
 import com.lainsmain.mneme.BuildConfig
 import com.lainsmain.mneme.data.ReleaseInfo
 import com.lainsmain.mneme.data.UpdateDownloadPhase
+import com.lainsmain.mneme.data.RemoteManifestPointer
 import java.text.DateFormat
 import java.util.Date
+import java.time.Instant
 
 @Composable
 fun SettingsScreen(
@@ -77,7 +83,10 @@ fun SettingsScreen(
     onDisconnect: () -> Unit,
     onBackupNow: () -> Unit,
     onAcknowledgeRecoveryCode: () -> Unit,
-    onRestoreBackup: (String) -> Unit,
+    onRestoreBackup: (String, RemoteManifestPointer?) -> Unit,
+    onExportDiary: () -> Unit,
+    onRefreshServerOverview: () -> Unit,
+    onCollectServerGarbage: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (ReleaseInfo) -> Unit,
     onInstallDownloadedUpdate: () -> Unit,
@@ -90,6 +99,8 @@ fun SettingsScreen(
     var recoveryCodeVisible by remember { mutableStateOf(false) }
     var restoreDialogVisible by remember { mutableStateOf(false) }
     var restoreCode by remember { mutableStateOf("") }
+    var restoreSnapshot by remember { mutableStateOf<RemoteManifestPointer?>(null) }
+    var cleanupDialogVisible by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
 
     LaunchedEffect(state.settings.serverUrl, state.settings.serverToken) {
@@ -303,6 +314,28 @@ fun SettingsScreen(
                         },
                     )
                 }
+                if (state.consecutiveBackupFailures > 0) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = MaterialTheme.shapes.large,
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(Icons.Rounded.WarningAmber, contentDescription = null)
+                            Column(Modifier.weight(1f)) {
+                                Text("Backup needs attention", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${state.consecutiveBackupFailures} recent attempt" +
+                                        if (state.consecutiveBackupFailures == 1) " failed." else "s failed.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
@@ -436,7 +469,10 @@ fun SettingsScreen(
                         ) { Text("Copy code") }
                     }
                     OutlinedButton(
-                        onClick = { restoreDialogVisible = true },
+                        onClick = {
+                            restoreSnapshot = null
+                            restoreDialogVisible = true
+                        },
                         enabled = state.restoreStatus != RestoreStatus.Running,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -456,6 +492,148 @@ fun SettingsScreen(
                             },
                         )
                     }
+                    HorizontalDivider(Modifier.padding(vertical = 2.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.History, contentDescription = null)
+                        Text(
+                            "Backup history",
+                            Modifier.weight(1f).padding(start = 8.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        TextButton(onClick = onRefreshServerOverview) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, Modifier.size(18.dp))
+                            Text("Refresh")
+                        }
+                    }
+                    if (state.serverSnapshots.isEmpty()) {
+                        Text(
+                            if (state.maintenanceStatus == MaintenanceStatus.Loading) "Loading snapshots…" else "No snapshots reported yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        state.serverSnapshots.take(6).forEach { snapshot ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        snapshot.updatedAt.toDisplayDate(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        "${snapshot.deviceId.take(24)} · snapshot ${snapshot.revision}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    restoreSnapshot = snapshot
+                                    restoreDialogVisible = true
+                                }) { Text("Restore") }
+                            }
+                        }
+                        if (state.serverSnapshots.size > 6) {
+                            Text(
+                                "${state.serverSnapshots.size - 6} more snapshots are retained on the server.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    state.serverStorage?.let { storage ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Rounded.Storage, contentDescription = null)
+                                Column(Modifier.weight(1f)) {
+                                    Text(formatBytes(storage.objectBytes), fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${storage.objectCount} encrypted objects · ${storage.manifestHistoryCount} snapshots",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (storage.incompleteManifestCount > 0) {
+                                        Text(
+                                            "${storage.incompleteManifestCount} legacy snapshot(s) are protected conservatively.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { cleanupDialogVisible = true },
+                            enabled = state.maintenanceStatus != MaintenanceStatus.Running,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Safely clean server storage") }
+                    }
+                    state.maintenanceMessage?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.maintenanceStatus == MaintenanceStatus.Error) {
+                                MaterialTheme.colorScheme.error
+                            } else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsSectionTitle(
+            icon = { Icon(Icons.Rounded.IosShare, contentDescription = null) },
+            title = "Export & ownership",
+            modifier = Modifier.padding(top = 28.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Make a readable ZIP you can keep anywhere.",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "It contains an HTML index, HTML and Markdown entries, original photos, and photo metadata. " +
+                        "This export is not encrypted, so store it somewhere private.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onExportDiary,
+                    enabled = state.exportStatus != ExportStatus.Running,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (state.exportStatus == ExportStatus.Running) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else Icon(Icons.Rounded.IosShare, contentDescription = null)
+                    Text("Export diary", Modifier.padding(start = 8.dp))
+                }
+                state.exportMessage?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.exportStatus == ExportStatus.Error) {
+                            MaterialTheme.colorScheme.error
+                        } else MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
@@ -555,7 +733,8 @@ fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Use this on a new, empty Mneme installation. Existing local entries will never be overwritten.",
+                        "Use this on a new, empty Mneme installation. Existing local entries will never be overwritten." +
+                            (restoreSnapshot?.let { " You selected the snapshot from ${it.updatedAt.toDisplayDate()}." } ?: ""),
                     )
                     OutlinedTextField(
                         value = restoreCode,
@@ -569,7 +748,7 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         restoreDialogVisible = false
-                        onRestoreBackup(restoreCode)
+                        onRestoreBackup(restoreCode, restoreSnapshot)
                     },
                     enabled = restoreCode.count(Char::isLetterOrDigit) == 64,
                 ) { Text("Restore") }
@@ -579,6 +758,38 @@ fun SettingsScreen(
             },
         )
     }
+    if (cleanupDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { cleanupDialogVisible = false },
+            title = { Text("Clean server storage?") },
+            text = {
+                Text(
+                    "Mneme will keep the newest 30 snapshots from every device and every encrypted object they use. " +
+                        "Only proven-unused objects older than 24 hours are removed.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    cleanupDialogVisible = false
+                    onCollectServerGarbage()
+                }) { Text("Clean safely") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cleanupDialogVisible = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+private fun String.toDisplayDate(): String = runCatching {
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date.from(Instant.parse(this)))
+}.getOrElse { this }
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    else -> "%.2f GB".format(bytes / 1024.0 / 1024.0 / 1024.0)
 }
 
 @Composable

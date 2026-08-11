@@ -23,10 +23,11 @@ const (
 )
 
 type Server struct {
-	store   *store.Store
-	logger  *slog.Logger
-	mux     *http.ServeMux
-	version string
+	store                       *store.Store
+	logger                      *slog.Logger
+	mux                         *http.ServeMux
+	version                     string
+	garbageCollectionMinimumAge time.Duration
 }
 
 type Option func(*Server)
@@ -35,12 +36,17 @@ func WithVersion(value string) Option {
 	return func(server *Server) { server.version = value }
 }
 
+func WithGarbageCollectionMinimumAge(value time.Duration) Option {
+	return func(server *Server) { server.garbageCollectionMinimumAge = value }
+}
+
 func New(dataStore *store.Store, logger *slog.Logger, options ...Option) *Server {
 	s := &Server{
-		store:   dataStore,
-		logger:  logger,
-		mux:     http.NewServeMux(),
-		version: "dev",
+		store:                       dataStore,
+		logger:                      logger,
+		mux:                         http.NewServeMux(),
+		version:                     "dev",
+		garbageCollectionMinimumAge: 24 * time.Hour,
 	}
 	for _, option := range options {
 		option(s)
@@ -53,6 +59,11 @@ func New(dataStore *store.Store, logger *slog.Logger, options ...Option) *Server
 	s.mux.Handle("PUT /v1/manifests/{device}", s.authenticate(http.HandlerFunc(s.putManifest)))
 	s.mux.Handle("GET /v1/manifests/{device}", s.authenticate(http.HandlerFunc(s.getManifest)))
 	s.mux.Handle("GET /v1/manifests", s.authenticate(http.HandlerFunc(s.listManifests)))
+	s.mux.Handle("GET /v1/manifests/{device}/history", s.authenticate(http.HandlerFunc(s.listManifestHistory)))
+	s.mux.Handle("GET /v1/manifests/{device}/history/{revision}", s.authenticate(http.HandlerFunc(s.getManifestRevision)))
+	s.mux.Handle("PUT /v1/manifests/{device}/history/{revision}/references", s.authenticate(http.HandlerFunc(s.putManifestReferences)))
+	s.mux.Handle("GET /v1/storage", s.authenticate(http.HandlerFunc(s.storage)))
+	s.mux.Handle("POST /v1/storage/gc", s.authenticate(http.HandlerFunc(s.collectGarbage)))
 	return s
 }
 
@@ -64,12 +75,18 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "apiVersion": 1})
 }
 
-func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	storage, err := s.store.StorageStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "inspect storage")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":       "mneme",
 		"apiVersion":    1,
 		"mode":          "opaque-encrypted-backup",
 		"serverVersion": s.version,
+		"storage":       storage,
 	})
 }
 
@@ -150,6 +167,92 @@ func (s *Server) listManifests(w http.ResponseWriter, r *http.Request) {
 		manifests = []store.Manifest{}
 	}
 	writeJSON(w, http.StatusOK, manifests)
+}
+
+func (s *Server) listManifestHistory(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	manifests, err := s.store.ListManifestHistory(r.Context(), r.PathValue("device"), limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if manifests == nil {
+		manifests = []store.Manifest{}
+	}
+	writeJSON(w, http.StatusOK, manifests)
+}
+
+func (s *Server) getManifestRevision(w http.ResponseWriter, r *http.Request) {
+	revision, err := strconv.ParseInt(r.PathValue("revision"), 10, 64)
+	if err != nil || revision < 1 {
+		writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+		return
+	}
+	manifest, err := s.store.ManifestRevision(r.Context(), r.PathValue("device"), revision)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "manifest revision not found")
+		return
+	}
+	w.Header().Set("X-Mneme-Revision", strconv.FormatInt(manifest.Revision, 10))
+	r.SetPathValue("hash", manifest.ObjectHash)
+	s.getObject(w, r)
+}
+
+type manifestReferencesRequest struct {
+	ObjectHashes []string `json:"objectHashes"`
+}
+
+func (s *Server) putManifestReferences(w http.ResponseWriter, r *http.Request) {
+	revision, err := strconv.ParseInt(r.PathValue("revision"), 10, 64)
+	if err != nil || revision < 1 {
+		writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+		return
+	}
+	var request manifestReferencesRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxManifestBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid object references")
+		return
+	}
+	if err := s.store.PutManifestReferences(r.Context(), r.PathValue("device"), revision, request.ObjectHashes); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stored": len(request.ObjectHashes)})
+}
+
+func (s *Server) storage(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.store.StorageStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "inspect storage")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+type garbageCollectionRequest struct {
+	KeepManifestsPerDevice int `json:"keepManifestsPerDevice"`
+}
+
+func (s *Server) collectGarbage(w http.ResponseWriter, r *http.Request) {
+	request := garbageCollectionRequest{KeepManifestsPerDevice: 30}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if r.ContentLength != 0 {
+		if err := decoder.Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid cleanup request")
+			return
+		}
+	}
+	result, err := s.store.CollectGarbage(
+		r.Context(), request.KeepManifestsPerDevice, s.garbageCollectionMinimumAge,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) authenticate(next http.Handler) http.Handler {
