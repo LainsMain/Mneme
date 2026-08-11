@@ -3,6 +3,7 @@
 [![CI](https://github.com/LainsMain/Mneme/actions/workflows/ci.yml/badge.svg)](https://github.com/LainsMain/Mneme/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/LainsMain/Mneme)](https://github.com/LainsMain/Mneme/releases/latest)
 [![Docker](https://img.shields.io/docker/v/lainsmain/mneme-server?label=server)](https://hub.docker.com/r/lainsmain/mneme-server)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Mneme is a private, native Android diary with flexible daily pages, lightweight
 rich text, complete photo metadata, self-written monthly recaps, local search,
@@ -74,3 +75,14 @@ The server is intentionally an opaque blob store: manifests and original photos
 are AES-256-GCM encrypted on Android before upload. A tested restore flow and
 user-held recovery-key export are still required before treating backups as the
 only copy of important diary data.
+
+## Security
+
+Do not post suspected vulnerabilities or exposed credentials in a public issue.
+See [SECURITY.md](SECURITY.md) for private reporting and credential-handling
+guidance. The repository uses secret scanning, push protection, and an
+independent full-history scan in CI.
+
+## License
+
+Mneme is available under the [MIT License](LICENSE).
