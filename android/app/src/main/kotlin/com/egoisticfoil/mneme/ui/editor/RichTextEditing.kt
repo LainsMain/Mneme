@@ -16,6 +16,23 @@ import com.egoisticfoil.mneme.model.RichTextDocument
 import com.egoisticfoil.mneme.model.TextMark
 
 object RichTextEditing {
+    fun typingStyles(
+        document: RichTextDocument,
+        cursor: Int,
+        pendingStyles: Set<InlineStyle>?,
+    ): Set<InlineStyle> = pendingStyles
+        ?: document.stylesAt((cursor - 1).coerceIn(0, document.text.lastIndex.coerceAtLeast(0)))
+
+    fun toggleTypingStyle(
+        document: RichTextDocument,
+        cursor: Int,
+        pendingStyles: Set<InlineStyle>?,
+        style: InlineStyle,
+    ): Set<InlineStyle> {
+        val current = typingStyles(document, cursor, pendingStyles)
+        return if (style in current) current - style else current + style
+    }
+
     fun replaceText(
         document: RichTextDocument,
         newText: String,

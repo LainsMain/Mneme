@@ -54,7 +54,8 @@ import com.egoisticfoil.mneme.model.RichTextDocument
 @Stable
 class RichTextEditorState internal constructor(initialText: String) {
     var fieldValue by mutableStateOf(TextFieldValue(initialText, selection = TextRange(initialText.length)))
-    var pendingStyles by mutableStateOf(emptySet<InlineStyle>())
+    /** Null inherits the cursor's surrounding styles; an empty set explicitly types plain text. */
+    var pendingStyles by mutableStateOf<Set<InlineStyle>?>(null)
     var isFocused by mutableStateOf(false)
 }
 
@@ -115,17 +116,18 @@ fun RichTextEditor(
             value = state.fieldValue,
             onValueChange = { newValue ->
                 if (newValue.text != state.fieldValue.text) {
-                    val inheritedStyles = if (state.pendingStyles.isNotEmpty()) {
-                        state.pendingStyles
-                    } else {
-                        document.stylesAt((state.fieldValue.selection.start - 1).coerceAtLeast(0))
-                    }
+                    val inheritedStyles = RichTextEditing.typingStyles(
+                        document = document,
+                        cursor = state.fieldValue.selection.start,
+                        pendingStyles = state.pendingStyles,
+                    )
                     val updated = RichTextEditing.replaceText(document, newValue.text, inheritedStyles)
                     state.fieldValue = newValue
                     onDocumentChange(updated)
                 } else {
+                    val selectionChanged = newValue.selection != state.fieldValue.selection
                     state.fieldValue = newValue
-                    if (!newValue.selection.collapsed) state.pendingStyles = emptySet()
+                    if (selectionChanged) state.pendingStyles = null
                 }
             },
             modifier = Modifier
@@ -174,12 +176,14 @@ fun RichTextFormattingBar(
         pendingStyles = state.pendingStyles,
         onToggle = { style ->
             if (state.fieldValue.selection.collapsed) {
-                state.pendingStyles = if (style in state.pendingStyles) {
-                    state.pendingStyles - style
-                } else {
-                    state.pendingStyles + style
-                }
+                state.pendingStyles = RichTextEditing.toggleTypingStyle(
+                    document = document,
+                    cursor = state.fieldValue.selection.start,
+                    pendingStyles = state.pendingStyles,
+                    style = style,
+                )
             } else {
+                state.pendingStyles = null
                 onDocumentChange(RichTextEditing.toggleStyle(document, state.fieldValue.selection, style))
             }
         },
@@ -191,7 +195,7 @@ fun RichTextFormattingBar(
 private fun FormattingBar(
     document: RichTextDocument,
     selection: TextRange,
-    pendingStyles: Set<InlineStyle>,
+    pendingStyles: Set<InlineStyle>?,
     onToggle: (InlineStyle) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -209,8 +213,11 @@ private fun FormattingBar(
         ) {
             EditorStyle.entries.forEach { item ->
                 val selected = if (selection.collapsed) {
-                    item.style in pendingStyles ||
-                        RichTextEditing.selectionHasStyle(document, selection, item.style)
+                    item.style in RichTextEditing.typingStyles(
+                        document = document,
+                        cursor = selection.start,
+                        pendingStyles = pendingStyles,
+                    )
                 } else {
                     RichTextEditing.selectionHasStyle(document, selection, item.style)
                 }
