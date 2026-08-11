@@ -52,8 +52,8 @@ is also attached to every GitHub release. On a Docker host:
 
 ```bash
 curl -LO https://github.com/LainsMain/Mneme/releases/latest/download/compose.yaml
-curl -LO https://github.com/LainsMain/Mneme/releases/latest/download/.env.example
-cp .env.example .env
+curl -LO https://github.com/LainsMain/Mneme/releases/latest/download/mneme.env.example
+cp mneme.env.example .env
 docker compose up -d
 docker compose exec mneme-server /mneme token create --name "My phone"
 ```

@@ -80,9 +80,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cp .env.example mneme.env.example
           gh release create "$GITHUB_REF_NAME" \
             "Mneme-${{ steps.version.outputs.name }}.apk" \
             LICENSE \
             compose.yaml \
-            .env.example \
+            mneme.env.example \
             --verify-tag --generate-notes --title "Mneme ${{ steps.version.outputs.name }}"
