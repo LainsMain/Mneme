@@ -40,4 +40,43 @@ class RichTextEditingTest {
         assertTrue(InlineStyle.Italic in edited.stylesAt(7))
         assertFalse(InlineStyle.Italic in edited.stylesAt(13))
     }
+
+    @Test
+    fun collapsedCursor_canTurnInheritedStyleOffAndBackOn() {
+        val bold = RichTextDocument(
+            text = "hello",
+            marks = listOf(TextMark(0, 5, InlineStyle.Bold)),
+        )
+
+        val plainTyping = RichTextEditing.toggleTypingStyle(
+            document = bold,
+            cursor = 5,
+            pendingStyles = null,
+            style = InlineStyle.Bold,
+        )
+        assertTrue(plainTyping.isEmpty())
+        assertTrue(RichTextEditing.typingStyles(bold, 5, plainTyping).isEmpty())
+
+        val boldTyping = RichTextEditing.toggleTypingStyle(
+            document = bold,
+            cursor = 5,
+            pendingStyles = plainTyping,
+            style = InlineStyle.Bold,
+        )
+        assertEquals(setOf(InlineStyle.Bold), boldTyping)
+    }
+
+    @Test
+    fun movingCursorClearsOverrideAndInheritsThatPosition() {
+        val document = RichTextDocument(
+            text = "bold plain",
+            marks = listOf(TextMark(0, 4, InlineStyle.Bold)),
+        )
+
+        assertEquals(
+            setOf(InlineStyle.Bold),
+            RichTextEditing.typingStyles(document, cursor = 4, pendingStyles = null),
+        )
+        assertTrue(RichTextEditing.typingStyles(document, cursor = 10, pendingStyles = null).isEmpty())
+    }
 }
