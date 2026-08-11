@@ -1,0 +1,60 @@
+name: mneme
+
+services:
+  mneme-server:
+    image: ${MNEME_IMAGE:-egoisticfoil/mneme-server:latest}
+    build:
+      context: ../server
+      args:
+        VERSION: ${MNEME_VERSION:-0.1.0-dev}
+    restart: unless-stopped
+    environment:
+      MNEME_DATA_DIR: /data
+      MNEME_LISTEN: :8080
+      MNEME_PHOTON_URL: http://photon:2322
+    volumes:
+      - mneme-data:/data
+    ports:
+      - "127.0.0.1:${MNEME_LOCAL_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/mneme", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+  photon:
+    image: rtuszik/photon-docker:latest
+    restart: unless-stopped
+    environment:
+      IMPORT_MODE: jsonl
+      REGION: ${PHOTON_REGION:-belgium}
+      LANGUAGES: ${PHOTON_LANGUAGES:-nl,fr,de,en}
+      BASE_URL: https://download1.graphhopper.com/public
+      JAVA_PARAMS: -Xms1g -Xmx4g
+      UPDATE_STRATEGY: DISABLED
+    volumes:
+      - photon-data:/photon/data
+    ports:
+      - "127.0.0.1:${PHOTON_LOCAL_PORT:-2322}:2322"
+    security_opt:
+      - no-new-privileges:true
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      mneme-server:
+        condition: service_healthy
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    security_opt:
+      - no-new-privileges:true
+    profiles: ["tunnel"]
+
+volumes:
+  mneme-data:
+  photon-data:

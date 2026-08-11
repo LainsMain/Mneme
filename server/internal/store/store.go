@@ -1,0 +1,298 @@
+package store
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"github.com/egoisticfoil/mneme/server/internal/auth"
+)
+
+var (
+	objectHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	deviceIDPattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+)
+
+type Store struct {
+	db         *sql.DB
+	objectsDir string
+}
+
+type Token struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	CreatedAt time.Time  `json:"createdAt"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+}
+
+type Manifest struct {
+	DeviceID   string    `json:"deviceId"`
+	Revision   int64     `json:"revision"`
+	ObjectHash string    `json:"objectHash"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+func Open(dataDirectory string) (*Store, error) {
+	if err := os.MkdirAll(dataDirectory, 0o700); err != nil {
+		return nil, fmt.Errorf("create data directory: %w", err)
+	}
+	objectsDir := filepath.Join(dataDirectory, "objects")
+	if err := os.MkdirAll(objectsDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create objects directory: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(dataDirectory, "mneme.db"))
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	s := &Store{db: db, objectsDir: objectsDir}
+	if err := s.migrate(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) Close() error { return s.db.Close() }
+
+func (s *Store) migrate(ctx context.Context) error {
+	statements := []string{
+		`PRAGMA journal_mode = WAL`,
+		`PRAGMA foreign_keys = ON`,
+		`PRAGMA busy_timeout = 5000`,
+		`CREATE TABLE IF NOT EXISTS tokens (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			salt BLOB NOT NULL,
+			secret_hash BLOB NOT NULL,
+			created_at INTEGER NOT NULL,
+			revoked_at INTEGER
+		)`,
+		`CREATE TABLE IF NOT EXISTS objects (
+			hash TEXT PRIMARY KEY,
+			size INTEGER NOT NULL,
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS manifests (
+			device_id TEXT PRIMARY KEY,
+			revision INTEGER NOT NULL,
+			object_hash TEXT NOT NULL REFERENCES objects(hash),
+			updated_at INTEGER NOT NULL
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate database: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) CreateToken(ctx context.Context, name string) (string, Token, error) {
+	plain, parts, err := auth.Generate()
+	if err != nil {
+		return "", Token{}, err
+	}
+	salt, err := auth.NewSalt()
+	if err != nil {
+		return "", Token{}, err
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO tokens(id, name, salt, secret_hash, created_at) VALUES(?, ?, ?, ?, ?)`,
+		parts.ID, name, salt, auth.Hash(parts.Secret, salt), now.UnixMilli(),
+	)
+	if err != nil {
+		return "", Token{}, fmt.Errorf("store token: %w", err)
+	}
+	return plain, Token{ID: parts.ID, Name: name, CreatedAt: now}, nil
+}
+
+func (s *Store) Authenticate(ctx context.Context, plain string) (Token, bool) {
+	parts, err := auth.Parse(plain)
+	if err != nil {
+		return Token{}, false
+	}
+	var token Token
+	var salt, expected []byte
+	var createdAt int64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT id, name, salt, secret_hash, created_at FROM tokens WHERE id = ? AND revoked_at IS NULL`,
+		parts.ID,
+	).Scan(&token.ID, &token.Name, &salt, &expected, &createdAt)
+	if err != nil || !auth.Matches(parts.Secret, salt, expected) {
+		return Token{}, false
+	}
+	token.CreatedAt = time.UnixMilli(createdAt).UTC()
+	return token, true
+}
+
+func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, created_at, revoked_at FROM tokens ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list tokens: %w", err)
+	}
+	defer rows.Close()
+	var tokens []Token
+	for rows.Next() {
+		var token Token
+		var createdAt int64
+		var revokedAt sql.NullInt64
+		if err := rows.Scan(&token.ID, &token.Name, &createdAt, &revokedAt); err != nil {
+			return nil, err
+		}
+		token.CreatedAt = time.UnixMilli(createdAt).UTC()
+		if revokedAt.Valid {
+			value := time.UnixMilli(revokedAt.Int64).UTC()
+			token.RevokedAt = &value
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens, rows.Err()
+}
+
+func (s *Store) RevokeToken(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`, time.Now().UTC().UnixMilli(), id)
+	if err != nil {
+		return fmt.Errorf("revoke token: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	if count == 0 {
+		return errors.New("active token not found")
+	}
+	return nil
+}
+
+func (s *Store) PutObject(ctx context.Context, expectedHash string, source io.Reader, maxBytes int64) (int64, error) {
+	if !objectHashPattern.MatchString(expectedHash) {
+		return 0, errors.New("object hash must be 64 lowercase hexadecimal characters")
+	}
+	path := s.objectPath(expectedHash)
+	if info, err := os.Stat(path); err == nil {
+		_, dbErr := s.db.ExecContext(ctx,
+			`INSERT INTO objects(hash, size, created_at) VALUES(?, ?, ?) ON CONFLICT(hash) DO NOTHING`,
+			expectedHash, info.Size(), time.Now().UTC().UnixMilli(),
+		)
+		if dbErr != nil {
+			return 0, dbErr
+		}
+		return info.Size(), nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return 0, err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
+	if err != nil {
+		return 0, err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+
+	hasher := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(temporary, hasher), io.LimitReader(source, maxBytes+1))
+	closeErr := temporary.Close()
+	if copyErr != nil {
+		return 0, copyErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	if written > maxBytes {
+		return 0, errors.New("object exceeds configured size limit")
+	}
+	if actual := hex.EncodeToString(hasher.Sum(nil)); actual != expectedHash {
+		return 0, fmt.Errorf("object hash mismatch: got %s", actual)
+	}
+	if err := os.Chmod(temporaryName, 0o600); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(temporaryName, path); err != nil {
+		return 0, err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO objects(hash, size, created_at) VALUES(?, ?, ?) ON CONFLICT(hash) DO NOTHING`,
+		expectedHash, written, time.Now().UTC().UnixMilli(),
+	)
+	return written, err
+}
+
+func (s *Store) OpenObject(hash string) (*os.File, error) {
+	if !objectHashPattern.MatchString(hash) {
+		return nil, os.ErrNotExist
+	}
+	return os.Open(s.objectPath(hash))
+}
+
+func (s *Store) PutManifest(ctx context.Context, deviceID string, revision int64, objectHash string) error {
+	if !deviceIDPattern.MatchString(deviceID) {
+		return errors.New("invalid device id")
+	}
+	if revision < 1 || !objectHashPattern.MatchString(objectHash) {
+		return errors.New("invalid manifest")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO manifests(device_id, revision, object_hash, updated_at) VALUES(?, ?, ?, ?)
+		ON CONFLICT(device_id) DO UPDATE SET
+			revision = excluded.revision,
+			object_hash = excluded.object_hash,
+			updated_at = excluded.updated_at
+		WHERE excluded.revision >= manifests.revision`,
+		deviceID, revision, objectHash, time.Now().UTC().UnixMilli(),
+	)
+	if err != nil {
+		return fmt.Errorf("store manifest: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	if count == 0 {
+		return errors.New("manifest revision is older than the stored revision")
+	}
+	return nil
+}
+
+func (s *Store) Manifest(ctx context.Context, deviceID string) (Manifest, error) {
+	if !deviceIDPattern.MatchString(deviceID) {
+		return Manifest{}, sql.ErrNoRows
+	}
+	var value Manifest
+	var updatedAt int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT device_id, revision, object_hash, updated_at FROM manifests WHERE device_id = ?`,
+		deviceID,
+	).Scan(&value.DeviceID, &value.Revision, &value.ObjectHash, &updatedAt)
+	value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+	return value, err
+}
+
+func (s *Store) ListManifests(ctx context.Context) ([]Manifest, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT device_id, revision, object_hash, updated_at FROM manifests ORDER BY device_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var manifests []Manifest
+	for rows.Next() {
+		var value Manifest
+		var updatedAt int64
+		if err := rows.Scan(&value.DeviceID, &value.Revision, &value.ObjectHash, &updatedAt); err != nil {
+			return nil, err
+		}
+		value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+		manifests = append(manifests, value)
+	}
+	return manifests, rows.Err()
+}
+
+func (s *Store) objectPath(hash string) string {
+	return filepath.Join(s.objectsDir, hash[:2], hash)
+}
