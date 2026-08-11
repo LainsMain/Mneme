@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: Mneme Backup API
+  version: 0.1.0
+  description: Opaque object API for end-to-end encrypted diary backups.
+servers:
+  - url: https://mneme.example.com/v1
+security:
+  - bearerToken: []
+paths:
+  /health:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service is healthy.
+  /vault/status:
+    get:
+      responses:
+        "200":
+          description: Server capabilities, API version, and release version used for compatibility checks.
+  /places/search:
+    get:
+      description: Search the server's self-hosted Photon/OpenStreetMap index.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 160
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 6
+        - name: lang
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A Photon GeoJSON feature collection with OpenStreetMap attribution.
+          content:
+            application/geo+json: {}
+        "502":
+          description: The local Photon service is starting or unavailable.
+  /objects/{hash}:
+    parameters:
+      - name: hash
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    put:
+      description: Store an opaque encrypted object. Its SHA-256 must match `hash`.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: {}
+      responses:
+        "201":
+          description: Object stored or already present.
+    get:
+      responses:
+        "200":
+          description: The opaque encrypted object.
+          content:
+            application/octet-stream: {}
+  /manifests:
+    get:
+      responses:
+        "200":
+          description: Current encrypted manifest pointers for all devices.
+  /manifests/{deviceId}:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      parameters:
+        - name: X-Mneme-Revision
+          in: header
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: {}
+      responses:
+        "201":
+          description: Encrypted device manifest stored.
+        "409":
+          description: A newer manifest already exists.
+    get:
+      responses:
+        "200":
+          description: Current opaque encrypted manifest for this device.
+          content:
+            application/octet-stream: {}
+components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer

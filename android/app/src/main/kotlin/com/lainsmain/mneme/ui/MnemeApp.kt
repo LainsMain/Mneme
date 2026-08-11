@@ -1,0 +1,398 @@
+package com.lainsmain.mneme.ui
+
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.lainsmain.mneme.ui.calendar.MonthScreen
+import com.lainsmain.mneme.ui.diary.DiaryScreen
+import com.lainsmain.mneme.ui.diary.DiaryUiState
+import com.lainsmain.mneme.ui.list.EntryListScreen
+import com.lainsmain.mneme.ui.map.MapScreen
+import com.lainsmain.mneme.ui.media.MediaScreen
+import com.lainsmain.mneme.ui.search.SearchScreen
+import com.lainsmain.mneme.data.ThemePreference
+import com.lainsmain.mneme.data.ColorPalette
+import com.lainsmain.mneme.ui.settings.SettingsScreen
+import com.lainsmain.mneme.ui.settings.SettingsUiState
+import java.time.LocalDate
+
+private enum class JournalDestination(val label: String) {
+    Journal("Journal"),
+    List("List"),
+    Calendar("Month"),
+    Media("Media"),
+    Map("Map"),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MnemeApp(
+    state: DiaryUiState,
+    onPreviousDay: () -> Unit,
+    onNextDay: () -> Unit,
+    onToday: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+    onDocumentChange: (com.lainsmain.mneme.model.RichTextDocument) -> Unit,
+    onAddPhotos: (List<Uri>) -> Unit,
+    onMakePhotoPrimary: (String) -> Unit,
+    onDeletePhoto: (String) -> Unit,
+    onSetLocation: (String, Double?, Double?) -> Unit,
+    onUsePhotoLocation: () -> Unit,
+    onSearchPlaces: (String) -> Unit,
+    onClearPlaceSearch: () -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+    settingsState: SettingsUiState,
+    onThemeChange: (ThemePreference) -> Unit,
+    onMaterialYouChange: (Boolean) -> Unit,
+    onColorPaletteChange: (ColorPalette) -> Unit,
+    onSavePin: (String) -> Unit,
+    onAppLockChange: (Boolean) -> Unit,
+    onBiometricChange: (Boolean) -> Unit,
+    onConnectServer: (String, String) -> Unit,
+    onDisconnectServer: () -> Unit,
+    onBackupNow: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+) {
+    var destination by remember { mutableStateOf(JournalDestination.Journal) }
+    var mediaTodayJumpKey by remember { mutableIntStateOf(0) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
+    val uriHandler = LocalUriHandler.current
+    BackHandler(enabled = showSettings || showSearch) {
+        showSettings = false
+        showSearch = false
+    }
+
+    Scaffold(
+        topBar = {
+            Column(
+                Modifier.background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.background,
+                        ),
+                    ),
+                ),
+            ) {
+                TopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (!showSettings && !showSearch) {
+                                Surface(
+                                    modifier = Modifier.size(34.dp),
+                                    shape = RoundedCornerShape(11.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.AutoMirrored.Rounded.MenuBook, null, Modifier.size(19.dp))
+                                    }
+                                }
+                            }
+                            Text(
+                                text = when {
+                                    showSettings -> "Settings"
+                                    showSearch -> "Search"
+                                    else -> "Mneme"
+                                },
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        if (showSettings || showSearch) {
+                            IconButton(onClick = {
+                                showSettings = false
+                                showSearch = false
+                            }) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "Back",
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        if (!showSettings && !showSearch) {
+                            TextButton(
+                                onClick = {
+                                    when (destination) {
+                                        JournalDestination.Calendar -> onCurrentMonth()
+                                        JournalDestination.Media -> mediaTodayJumpKey++
+                                        else -> onToday()
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Rounded.Today, contentDescription = null)
+                                Text("Today", modifier = Modifier.padding(start = 6.dp))
+                            }
+                            IconButton(onClick = { showSearch = true }) {
+                                Icon(Icons.Rounded.Search, contentDescription = "Search journal")
+                            }
+                            IconButton(onClick = { showSettings = true }) {
+                                Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+                if (!showSettings && !showSearch) {
+                    JournalNavigation(
+                        selected = destination,
+                        onSelected = { destination = it },
+                    )
+                }
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { contentPadding ->
+        AnimatedContent(
+            targetState = Triple(showSettings, showSearch, destination),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            label = "journal destination",
+        ) { (settingsVisible, searchVisible, target) ->
+            if (settingsVisible) {
+                SettingsScreen(
+                    state = settingsState,
+                    onThemeChange = onThemeChange,
+                    onMaterialYouChange = onMaterialYouChange,
+                    onColorPaletteChange = onColorPaletteChange,
+                    onSavePin = onSavePin,
+                    onAppLockChange = onAppLockChange,
+                    onBiometricChange = onBiometricChange,
+                    onConnect = onConnectServer,
+                    onDisconnect = onDisconnectServer,
+                    onBackupNow = onBackupNow,
+                    onCheckForUpdates = onCheckForUpdates,
+                )
+            } else if (searchVisible) {
+                SearchScreen(
+                    entries = state.allDays,
+                    onOpenDay = { date ->
+                        onSelectDate(date)
+                        destination = JournalDestination.Journal
+                        showSearch = false
+                    },
+                )
+            } else when (target) {
+                JournalDestination.Journal -> DiaryScreen(
+                    state = state,
+                    onPreviousDay = onPreviousDay,
+                    onNextDay = onNextDay,
+                    onSelectDate = onSelectDate,
+                    onDocumentChange = onDocumentChange,
+                    onAddPhotos = onAddPhotos,
+                    onMakePhotoPrimary = onMakePhotoPrimary,
+                    onDeletePhoto = onDeletePhoto,
+                    onSetLocation = onSetLocation,
+                    onUsePhotoLocation = onUsePhotoLocation,
+                    onSearchPlaces = onSearchPlaces,
+                    onClearPlaceSearch = onClearPlaceSearch,
+                )
+
+                JournalDestination.List -> EntryListScreen(
+                    entries = state.allDays,
+                    onOpenDay = { date ->
+                        onSelectDate(date)
+                        destination = JournalDestination.Journal
+                    },
+                )
+
+                JournalDestination.Calendar -> MonthScreen(
+                    focusedMonth = state.visibleMonth,
+                    summaries = state.allDays.associateBy { it.date },
+                    selectedDate = state.selectedDate,
+                    jumpKey = state.calendarJumpKey,
+                    onOpenDay = { date ->
+                        onSelectDate(date)
+                        destination = JournalDestination.Journal
+                    },
+                )
+
+                JournalDestination.Media -> MediaScreen(
+                    media = state.allMedia,
+                    todayJumpKey = mediaTodayJumpKey,
+                    onMakePrimary = onMakePhotoPrimary,
+                    onDelete = onDeletePhoto,
+                )
+
+                JournalDestination.Map -> MapScreen(
+                    entries = state.allDays,
+                    onOpenDay = { date ->
+                        onSelectDate(date)
+                        destination = JournalDestination.Journal
+                    },
+                )
+            }
+        }
+    }
+
+    settingsState.availableUpdate
+        ?.takeIf { it.tag != dismissedUpdateTag }
+        ?.let { release ->
+            AlertDialog(
+                onDismissRequest = { dismissedUpdateTag = release.tag },
+                title = { Text("A new Mneme is ready") },
+                text = {
+                    Text(
+                        "Version ${release.version} is available. Download the signed APK from the public GitHub release?",
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            dismissedUpdateTag = release.tag
+                            uriHandler.openUri(release.downloadUrl)
+                        },
+                    ) { Text("Download update") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { dismissedUpdateTag = release.tag }) { Text("Later") }
+                },
+            )
+        }
+}
+
+@Composable
+private fun JournalNavigation(
+    selected: JournalDestination,
+    onSelected: (JournalDestination) -> Unit,
+) {
+    Surface(
+        color = Color.Transparent,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            JournalDestination.entries.forEach { destination ->
+                val active = selected == destination
+                val labelColor by animateColorAsState(
+                    if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "navigation color",
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelected(destination) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = destination.label,
+                        color = labelColor,
+                        fontSize = 13.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                    )
+                    if (active) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .width(30.dp)
+                                .height(3.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComingSoonScreen(icon: ImageVector, title: String, message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(36.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
