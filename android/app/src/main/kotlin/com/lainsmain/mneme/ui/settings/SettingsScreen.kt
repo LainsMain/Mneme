@@ -1,0 +1,480 @@
+package com.lainsmain.mneme.ui.settings
+
+import android.os.Build
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import com.lainsmain.mneme.data.ThemePreference
+import com.lainsmain.mneme.data.ColorPalette
+import com.lainsmain.mneme.BuildConfig
+
+@Composable
+fun SettingsScreen(
+    state: SettingsUiState,
+    onThemeChange: (ThemePreference) -> Unit,
+    onMaterialYouChange: (Boolean) -> Unit,
+    onColorPaletteChange: (ColorPalette) -> Unit,
+    onSavePin: (String) -> Unit,
+    onAppLockChange: (Boolean) -> Unit,
+    onBiometricChange: (Boolean) -> Unit,
+    onConnect: (String, String) -> Unit,
+    onDisconnect: () -> Unit,
+    onBackupNow: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var serverUrl by remember { mutableStateOf(state.settings.serverUrl) }
+    var token by remember { mutableStateOf(state.settings.serverToken) }
+    var pin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    val uriHandler = LocalUriHandler.current
+
+    LaunchedEffect(state.settings.serverUrl, state.settings.serverToken) {
+        serverUrl = state.settings.serverUrl
+        token = state.settings.serverToken
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+    ) {
+        SettingsSectionTitle(
+            icon = { Icon(Icons.Rounded.Palette, contentDescription = null) },
+            title = "Appearance",
+            modifier = Modifier.padding(top = 20.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ThemePreference.entries.forEach { theme ->
+                        FilterChip(
+                            selected = state.settings.theme == theme,
+                            onClick = { onThemeChange(theme) },
+                            label = { Text(theme.name) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Text("Color palette", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                ColorPalette.entries.chunked(3).forEach { rowPalettes ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowPalettes.forEach { palette ->
+                            FilterChip(
+                                selected = !state.settings.useMaterialYou &&
+                                    state.settings.colorPalette == palette,
+                                onClick = {
+                                    onMaterialYouChange(false)
+                                    onColorPaletteChange(palette)
+                                },
+                                label = { Text(palette.name) },
+                                leadingIcon = {
+                                    Box(
+                                        Modifier
+                                            .size(11.dp)
+                                            .background(palette.previewColor(), CircleShape),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Material You colors", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                "Use colors from your wallpaper"
+                            } else {
+                                "Requires Android 12 or newer"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.settings.useMaterialYou,
+                        onCheckedChange = onMaterialYouChange,
+                        enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+                    )
+                }
+            }
+        }
+
+        SettingsSectionTitle(
+            icon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+            title = "Privacy",
+            modifier = Modifier.padding(top = 28.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    if (state.settings.hasPin) "Change PIN" else "Set an app PIN",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { if (it.length <= 8 && it.all(Char::isDigit)) pin = it },
+                        label = { Text("PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = confirmPin,
+                        onValueChange = { if (it.length <= 8 && it.all(Char::isDigit)) confirmPin = it },
+                        label = { Text("Confirm") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Button(
+                    onClick = {
+                        onSavePin(pin)
+                        pin = ""
+                        confirmPin = ""
+                    },
+                    enabled = pin.length in 4..8 && pin == confirmPin,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (state.settings.hasPin) "Change PIN" else "Set PIN") }
+                SettingSwitchRow(
+                    title = "Lock when Mneme opens",
+                    subtitle = "Require your PIN before showing entries",
+                    checked = state.settings.appLockEnabled,
+                    enabled = state.settings.hasPin,
+                    onCheckedChange = onAppLockChange,
+                )
+                SettingSwitchRow(
+                    title = "Fingerprint or face",
+                    subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        "Use the secure Android biometric prompt"
+                    } else {
+                        "Requires Android 9 or newer"
+                    },
+                    checked = state.settings.biometricEnabled,
+                    enabled = state.settings.appLockEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P,
+                    onCheckedChange = onBiometricChange,
+                    icon = { Icon(Icons.Rounded.Fingerprint, contentDescription = null) },
+                )
+                state.lockMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+
+        SettingsSectionTitle(
+            icon = {
+                Icon(
+                    if (state.settings.serverConnected) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
+                    contentDescription = null,
+                )
+            },
+            title = "Self-hosted backup",
+            modifier = Modifier.padding(top = 28.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "Connect to your Docker server locally or through its Cloudflare Tunnel address.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = { serverUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Server URL") },
+                    placeholder = { Text("https://diary.example.com or http://10.0.2.2:8080") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Access token") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                )
+                Text(
+                    "Generate one with: docker compose exec mneme-server /mneme token create --name Android",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                state.connectionMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.connectionStatus == ServerConnectionStatus.Error) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onConnect(serverUrl, token) },
+                        enabled = state.connectionStatus != ServerConnectionStatus.Testing,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (state.connectionStatus == ServerConnectionStatus.Testing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.height(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text(if (state.settings.serverConnected) "Test again" else "Connect")
+                        }
+                    }
+                    if (state.settings.serverConnected) {
+                        OutlinedButton(onClick = onDisconnect) { Text("Disconnect") }
+                    }
+                }
+                if (state.settings.serverConnected) {
+                    HorizontalDivider(Modifier.padding(vertical = 2.dp))
+                    if (state.serverOutdated) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                Icon(Icons.Rounded.WarningAmber, contentDescription = null)
+                                Column(Modifier.weight(1f)) {
+                                    Text("Server update available", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "Connected: ${state.settings.serverVersion}. Latest: ${state.latestRelease?.version}. " +
+                                            "Run docker compose pull, then docker compose up -d.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                    } else if (state.settings.serverVersion.isNotBlank()) {
+                        Text(
+                            "Server ${state.settings.serverVersion}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "Encrypted backups run automatically about every 6 hours when the device is online.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = onBackupNow,
+                        enabled = state.backupStatus != BackupStatus.Running,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (state.backupStatus == BackupStatus.Running) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Rounded.CloudUpload, contentDescription = null)
+                        }
+                        Text("Back up now", Modifier.padding(start = 8.dp))
+                    }
+                    state.backupMessage?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.backupStatus == BackupStatus.Error) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsSectionTitle(
+            icon = { Icon(Icons.Rounded.SystemUpdate, contentDescription = null) },
+            title = "App updates",
+            modifier = Modifier.padding(top = 28.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Installed version ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Mneme checks its public GitHub releases when the app opens. Updates are always your choice.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.updateMessage?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.updateStatus == UpdateStatus.Error) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+                Button(
+                    onClick = onCheckForUpdates,
+                    enabled = state.updateStatus != UpdateStatus.Checking,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (state.updateStatus == UpdateStatus.Checking) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.SystemUpdate, contentDescription = null)
+                    }
+                    Text("Check for updates", Modifier.padding(start = 8.dp))
+                }
+                state.availableUpdate?.let { release ->
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri(release.downloadUrl) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null)
+                        Text("Download ${release.version}", Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(36.dp))
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    icon: (@Composable () -> Unit)? = null,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        icon?.invoke()
+        Column(Modifier.weight(1f).padding(start = if (icon == null) 0.dp else 10.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(
+    icon: @Composable () -> Unit,
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(38.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) { icon() }
+        }
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    }
+}
+
+private fun ColorPalette.previewColor(): Color = when (this) {
+    ColorPalette.Ocean -> Color(0xFF39A7C8)
+    ColorPalette.Forest -> Color(0xFF65A367)
+    ColorPalette.Lavender -> Color(0xFF8B75BD)
+    ColorPalette.Rose -> Color(0xFFC66B82)
+    ColorPalette.Amber -> Color(0xFFD68A22)
+    ColorPalette.Graphite -> Color(0xFF77737A)
+}

@@ -1,0 +1,16 @@
+.gradle/
+.idea/
+local.properties
+secrets.properties
+**/build/
+*.iml
+.DS_Store
+
+# Android signing and generated artifacts
+*.jks
+*.keystore
+captures/
+
+# Local server state and deployment secrets
+server/data/
+deploy/.env
