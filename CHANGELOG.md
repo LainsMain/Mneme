@@ -6,6 +6,8 @@
   including suggestion rows and navigation controls, across keyboard layouts.
 - Update MapLibre, the server's cryptography and SQLite libraries, and the
   pinned GitHub Actions while retaining the stable Android API 36 toolchain.
+- Publish the self-hosted server and deployment examples under the
+  `lainsmain/mneme-server` Docker Hub namespace.
 
 ## 0.1.8
 
