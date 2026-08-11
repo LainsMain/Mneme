@@ -37,5 +37,6 @@ jobs:
       - name: Build and test Android
         run: ./gradlew :android:app:assembleDebug :android:app:testDebugUnitTest :android:app:lintDebug
       - name: Validate Compose
-        working-directory: deploy
-        run: docker compose config --quiet
+        run: |
+          docker compose --env-file .env.example config --quiet
+          docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet

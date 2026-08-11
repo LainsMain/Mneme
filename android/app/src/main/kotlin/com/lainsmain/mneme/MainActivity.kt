@@ -8,11 +8,16 @@ import android.os.CancellationSignal
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lainsmain.mneme.ui.MnemeApp
@@ -40,8 +45,23 @@ class MainActivity : ComponentActivity() {
                 palette = settingsState.settings.colorPalette,
                 dynamicColor = settingsState.settings.useMaterialYou,
             ) {
-                var unlocked by rememberSaveable {
+                var unlocked by remember {
                     mutableStateOf(!settingsState.settings.appLockEnabled)
+                }
+                val lifecycleOwner = LocalLifecycleOwner.current
+                val appLockEnabled by rememberUpdatedState(settingsState.settings.appLockEnabled)
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (
+                            event == Lifecycle.Event.ON_STOP &&
+                            appLockEnabled &&
+                            !this@MainActivity.isChangingConfigurations
+                        ) {
+                            unlocked = false
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
                 }
                 LaunchedEffect(settingsState.settings.appLockEnabled) {
                     if (!settingsState.settings.appLockEnabled) unlocked = true

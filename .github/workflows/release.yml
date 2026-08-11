@@ -83,4 +83,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "Mneme-${{ steps.version.outputs.name }}.apk" \
             LICENSE \
+            compose.yaml \
+            .env.example \
             --verify-tag --generate-notes --title "Mneme ${{ steps.version.outputs.name }}"
