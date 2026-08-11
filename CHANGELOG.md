@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Keep the rich-text formatting bar above the complete Android keyboard,
+  including suggestion rows and navigation controls, across keyboard layouts.
+- Update MapLibre, the server's cryptography and SQLite libraries, and the
+  pinned GitHub Actions while retaining the stable Android API 36 toolchain.
+
 ## 0.1.8
 
 - Show the Media timeline from oldest to newest so the photo story moves forward
