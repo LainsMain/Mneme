@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -26,6 +28,7 @@ class BackupWorker(
 
     companion object {
         private const val UNIQUE_WORK = "mneme-periodic-vault-backup"
+        private const val UNIQUE_SOON_WORK = "mneme-after-change-vault-backup"
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<BackupWorker>(6, TimeUnit.HOURS)
@@ -42,8 +45,25 @@ class BackupWorker(
             )
         }
 
+        fun scheduleSoon(context: Context) {
+            val request = OneTimeWorkRequestBuilder<BackupWorker>()
+                .setInitialDelay(30, TimeUnit.SECONDS)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                UNIQUE_SOON_WORK,
+                ExistingWorkPolicy.REPLACE,
+                request,
+            )
+        }
+
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK)
+            WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_SOON_WORK)
         }
     }
 }

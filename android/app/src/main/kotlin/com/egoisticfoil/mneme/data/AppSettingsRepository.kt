@@ -119,6 +119,7 @@ class AppSettingsRepository(private val context: Context) {
                 serverVersion = serverVersion,
             )
             BackupWorker.schedule(context)
+            BackupWorker.scheduleSoon(context)
         }
     }
 

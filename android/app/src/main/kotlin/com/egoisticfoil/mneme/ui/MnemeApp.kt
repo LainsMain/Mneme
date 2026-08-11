@@ -46,12 +46,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.egoisticfoil.mneme.ui.calendar.MonthScreen
@@ -62,6 +64,7 @@ import com.egoisticfoil.mneme.ui.map.MapScreen
 import com.egoisticfoil.mneme.ui.media.MediaScreen
 import com.egoisticfoil.mneme.ui.search.SearchScreen
 import com.egoisticfoil.mneme.data.ThemePreference
+import com.egoisticfoil.mneme.data.ReleaseInfo
 import com.egoisticfoil.mneme.data.ColorPalette
 import com.egoisticfoil.mneme.ui.settings.SettingsScreen
 import com.egoisticfoil.mneme.ui.settings.SettingsUiState
@@ -106,14 +109,19 @@ fun MnemeApp(
     onConnectServer: (String, String) -> Unit,
     onDisconnectServer: () -> Unit,
     onBackupNow: () -> Unit,
+    onAcknowledgeRecoveryCode: () -> Unit,
+    onRestoreBackup: (String) -> Unit,
     onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (ReleaseInfo) -> Unit,
+    onInstallDownloadedUpdate: () -> Unit,
 ) {
     var destination by remember { mutableStateOf(JournalDestination.Journal) }
     var mediaTodayJumpKey by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
-    val uriHandler = LocalUriHandler.current
+    var dismissedRecoveryReminder by rememberSaveable { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     BackHandler(enabled = showSettings || showSearch) {
         showSettings = false
         showSearch = false
@@ -229,7 +237,11 @@ fun MnemeApp(
                     onConnect = onConnectServer,
                     onDisconnect = onDisconnectServer,
                     onBackupNow = onBackupNow,
+                    onAcknowledgeRecoveryCode = onAcknowledgeRecoveryCode,
+                    onRestoreBackup = onRestoreBackup,
                     onCheckForUpdates = onCheckForUpdates,
+                    onDownloadUpdate = onDownloadUpdate,
+                    onInstallDownloadedUpdate = onInstallDownloadedUpdate,
                 )
             } else if (searchVisible) {
                 SearchScreen(
@@ -295,9 +307,46 @@ fun MnemeApp(
         }
     }
 
-    settingsState.availableUpdate
-        ?.takeIf { it.tag != dismissedUpdateTag }
-        ?.let { release ->
+    val showRecoveryReminder = settingsState.settings.serverConnected &&
+        settingsState.recoveryCodeNeedsSaving && !dismissedRecoveryReminder
+    if (showRecoveryReminder) {
+        AlertDialog(
+            onDismissRequest = { dismissedRecoveryReminder = true },
+            title = { Text("Save your recovery code") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "If this phone dies, this code and a server access token are what restore your encrypted diary. " +
+                            "Mneme cannot recover the code for you.",
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = MaterialTheme.shapes.large,
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                settingsState.recoveryCode,
+                                modifier = Modifier.padding(14.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { clipboard.setText(AnnotatedString(settingsState.recoveryCode)) },
+                    ) { Text("Copy recovery code") }
+                }
+            },
+            confirmButton = {
+                Button(onClick = onAcknowledgeRecoveryCode) { Text("I saved it") }
+            },
+            dismissButton = {
+                TextButton(onClick = { dismissedRecoveryReminder = true }) { Text("Later") }
+            },
+        )
+    } else {
+        settingsState.availableUpdate
+            ?.takeIf { it.tag != dismissedUpdateTag }
+            ?.let { release ->
             AlertDialog(
                 onDismissRequest = { dismissedUpdateTag = release.tag },
                 title = { Text("A new Mneme is ready") },
@@ -310,15 +359,16 @@ fun MnemeApp(
                     Button(
                         onClick = {
                             dismissedUpdateTag = release.tag
-                            uriHandler.openUri(release.downloadUrl)
+                            onDownloadUpdate(release)
                         },
-                    ) { Text("Download update") }
+                    ) { Text("Download in Mneme") }
                 },
                 dismissButton = {
                     TextButton(onClick = { dismissedUpdateTag = release.tag }) { Text("Later") }
                 },
             )
         }
+    }
 }
 
 @Composable

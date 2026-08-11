@@ -13,8 +13,21 @@ interface DiaryDao {
     @Query("SELECT * FROM diary_pages WHERE deletedAtEpochMillis IS NULL ORDER BY diaryDate")
     suspend fun pagesForBackup(): List<DiaryPageEntity>
 
-    @Query("SELECT * FROM attachments ORDER BY pageId, sortOrder, createdAtEpochMillis")
+    @Query(
+        """
+        SELECT attachment.* FROM attachments AS attachment
+        INNER JOIN diary_pages AS page ON page.id = attachment.pageId
+        WHERE page.deletedAtEpochMillis IS NULL
+        ORDER BY attachment.pageId, attachment.sortOrder, attachment.createdAtEpochMillis
+        """,
+    )
     suspend fun attachmentsForBackup(): List<AttachmentEntity>
+
+    @Query("SELECT * FROM monthly_recaps WHERE deletedAtEpochMillis IS NULL ORDER BY yearMonth")
+    suspend fun recapsForBackup(): List<MonthlyRecapEntity>
+
+    @Query("SELECT (SELECT COUNT(*) FROM diary_pages) + (SELECT COUNT(*) FROM attachments) + (SELECT COUNT(*) FROM monthly_recaps)")
+    suspend fun localContentCount(): Int
 
     @Query("SELECT * FROM diary_pages WHERE diaryDate = :diaryDate AND deletedAtEpochMillis IS NULL LIMIT 1")
     fun observePage(diaryDate: String): Flow<DiaryPageEntity?>
@@ -131,6 +144,23 @@ interface DiaryDao {
 
     @Insert
     suspend fun insertAttachment(attachment: AttachmentEntity)
+
+    @Upsert
+    suspend fun upsertAttachment(attachment: AttachmentEntity)
+
+    @Upsert
+    suspend fun upsertRecap(recap: MonthlyRecapEntity)
+
+    @Transaction
+    suspend fun restoreBackup(
+        pages: List<DiaryPageEntity>,
+        attachments: List<AttachmentEntity>,
+        recaps: List<MonthlyRecapEntity>,
+    ) {
+        pages.forEach { upsertPage(it) }
+        attachments.forEach { upsertAttachment(it) }
+        recaps.forEach { upsertRecap(it) }
+    }
 
     @Query("SELECT * FROM attachments WHERE id = :attachmentId LIMIT 1")
     suspend fun attachmentById(attachmentId: String): AttachmentEntity?
