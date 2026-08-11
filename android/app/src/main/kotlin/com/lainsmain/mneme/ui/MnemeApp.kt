@@ -3,6 +3,7 @@ package com.lainsmain.mneme.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -49,6 +49,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lainsmain.mneme.ui.calendar.MonthScreen
+import com.lainsmain.mneme.R
 import com.lainsmain.mneme.ui.diary.DiaryScreen
 import com.lainsmain.mneme.ui.diary.DiaryUiState
 import com.lainsmain.mneme.ui.list.EntryListScreen
@@ -154,7 +156,11 @@ fun MnemeApp(
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.AutoMirrored.Rounded.MenuBook, null, Modifier.size(19.dp))
+                                        Image(
+                                            painter = painterResource(R.drawable.mneme_logo_foreground),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(27.dp),
+                                        )
                                     }
                                 }
                             }

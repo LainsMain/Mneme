@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Let cursor formatting buttons reliably turn inherited bold, italic, underline, heading, and strikethrough off and back on.
+- Reset temporary formatting overrides when the cursor moves so the toolbar reflects the new text position.
+- Replace the generic white-backed launcher art with a custom Mneme memory-journal mark, adaptive Android icons, themed monochrome support, and matching in-app branding.
+
 ## 0.1.5
 
 - Add portable recovery codes and a safe new-phone restore flow for encrypted diary entries, original photos, metadata, and monthly recaps.
