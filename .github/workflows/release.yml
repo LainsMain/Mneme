@@ -46,7 +46,8 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          ./gradlew :android:app:testDebugUnitTest :android:app:assembleRelease \
+          ./gradlew --no-parallel --no-build-cache :android:app:testDebugUnitTest
+          ./gradlew --no-parallel --no-build-cache :android:app:assembleRelease \
             -PmnemeVersion="${{ steps.version.outputs.name }}" \
             -PmnemeVersionCode="${{ steps.version.outputs.code }}"
           cp android/app/build/outputs/apk/release/app-release.apk \
