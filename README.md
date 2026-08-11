@@ -27,6 +27,8 @@ This repository currently contains the first vertical slice:
 - Docker Compose deployment with optional remotely managed Cloudflare Tunnel.
 - Automatic GitHub release checks, verified in-app APK downloads, and app/server
   version compatibility notices.
+- Editable monthly recap pages, readable ZIP export, backup-failure alerts, and
+  encrypted snapshot history with safe server storage maintenance.
 
 ## Android
 
@@ -99,10 +101,18 @@ fallback. Android may defer background work during Doze or while offline.
 Settings shows the last successful backup and a portable recovery code. Store
 that code outside the phone: a fresh Mneme installation can connect to the same
 server, choose **Restore on this device**, and decrypt the latest matching
-backup with it. Neither the server token nor the server administrator can
+backup—or a selected retained snapshot—with it. The server keeps the newest 30
+snapshots per device when cleanup runs. Its object-reference index contains only
+opaque ciphertext hashes, so storage can be reclaimed without exposing diary
+contents. Neither the server token nor the server administrator can
 decrypt a backup without the recovery code. Backups created before 0.1.5 used a
 device-bound Android Keystore key, so upgrade users must make one fresh backup
 and save the new code before relying on disaster recovery.
+
+For a non-encrypted, human-readable copy, use **Settings → Export & ownership**.
+The ZIP contains browser-friendly HTML, Markdown, original photos, and separate
+metadata records; keep that file private because it is deliberately portable
+rather than encrypted.
 
 ## Security
 

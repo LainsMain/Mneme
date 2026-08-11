@@ -61,6 +61,8 @@ class BackupRepository(
 
     fun lastBackupError(): String? = activityPreferences.getString(KEY_LAST_ERROR, null)
 
+    fun consecutiveBackupFailures(): Int = activityPreferences.getInt(KEY_CONSECUTIVE_FAILURES, 0)
+
     suspend fun backupNow(): Result<BackupResult> = backupMutex.withLock {
         val result = withContext(Dispatchers.IO) { runCatching { performBackup() } }
         result.fold(
@@ -68,18 +70,24 @@ class BackupRepository(
                 activityPreferences.edit()
                     .putLong(KEY_LAST_SUCCESS, System.currentTimeMillis())
                     .remove(KEY_LAST_ERROR)
+                    .putInt(KEY_CONSECUTIVE_FAILURES, 0)
                     .apply()
+                BackupNotificationManager(context).clearFailure()
             },
             onFailure = { error ->
                 activityPreferences.edit()
                     .putString(KEY_LAST_ERROR, error.message ?: "Backup failed.")
+                    .putInt(KEY_CONSECUTIVE_FAILURES, consecutiveBackupFailures() + 1)
                     .apply()
             },
         )
         result
     }
 
-    suspend fun restoreFromServer(recoveryCode: String): Result<RestoreResult> = backupMutex.withLock {
+    suspend fun restoreFromServer(
+        recoveryCode: String,
+        selectedSnapshot: RemoteManifestPointer? = null,
+    ): Result<RestoreResult> = backupMutex.withLock {
         withContext(Dispatchers.IO) { runCatching {
             require(diaryDao.localContentCount() == 0) {
                 "Restore is only available on an empty Mneme installation to avoid overwriting local entries."
@@ -88,13 +96,16 @@ class BackupRepository(
             val keyBytes = RecoveryKeyManager.parseCode(recoveryCode)
             val createdFiles = mutableListOf<File>()
             try {
-                val pointers = json.decodeFromString<List<RemoteManifestPointer>>(
-                    downloadBytes(settings, "/v1/manifests").toString(Charsets.UTF_8),
-                )
-                val manifest = pointers.sortedByDescending(RemoteManifestPointer::revision)
+                val pointers = selectedSnapshot?.let(::listOf) ?: loadRestorePointers(settings)
+                val manifest = pointers
                     .firstNotNullOfOrNull { pointer ->
                         runCatching {
-                            val encrypted = downloadBytes(settings, "/v1/manifests/${pointer.deviceId}")
+                            val path = if (pointer.historical) {
+                                "/v1/manifests/${pointer.deviceId}/history/${pointer.revision}"
+                            } else {
+                                "/v1/manifests/${pointer.deviceId}"
+                            }
+                            val encrypted = downloadBytes(settings, path)
                             json.decodeFromString<VaultManifest>(decryptBytes(encrypted, keyBytes).toString(Charsets.UTF_8))
                                 .takeIf { it.format == VAULT_FORMAT }
                         }.getOrNull()
@@ -200,6 +211,40 @@ class BackupRepository(
         } }
     }
 
+    suspend fun serverOverview(): Result<ServerOverview> = withContext(Dispatchers.IO) {
+        runCatching {
+            val settings = connectedSettings()
+            val latest = json.decodeFromString<List<RemoteManifestPointer>>(
+                downloadBytes(settings, "/v1/manifests").toString(Charsets.UTF_8),
+            )
+            val history = latest.flatMap { pointer ->
+                runCatching {
+                    json.decodeFromString<List<RemoteManifestPointer>>(
+                        downloadBytes(
+                            settings,
+                            "/v1/manifests/${pointer.deviceId}/history?limit=$HISTORY_LIMIT",
+                        ).toString(Charsets.UTF_8),
+                    ).map { it.copy(historical = true) }
+                }.getOrElse { listOf(pointer) }
+            }.distinctBy { it.deviceId to it.revision }
+                .sortedByDescending(RemoteManifestPointer::revision)
+            val storage = json.decodeFromString<ServerStorageStats>(
+                downloadBytes(settings, "/v1/storage").toString(Charsets.UTF_8),
+            )
+            ServerOverview(history, storage)
+        }
+    }
+
+    suspend fun collectServerGarbage(): Result<GarbageCollectionResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val settings = connectedSettings()
+            val body = json.encodeToString(GarbageCollectionRequest(HISTORY_LIMIT)).toByteArray()
+            json.decodeFromString<GarbageCollectionResult>(
+                requestBytes(settings, "/v1/storage/gc", "POST", body).toString(Charsets.UTF_8),
+            )
+        }
+    }
+
     private suspend fun performBackup(): BackupResult {
         val settings = connectedSettings()
         val pages = diaryDao.pagesForBackup()
@@ -234,6 +279,7 @@ class BackupRepository(
             val manifestFile = requireNotNull(encryptedManifest.file)
             try {
                 uploadManifest(settings, revision, encryptedManifest)
+                uploadManifestReferences(settings, revision, encryptedObjects.values.map { it.hash }.distinct())
                 uploadedBytes += manifestFile.length()
             } finally {
                 manifestFile.delete()
@@ -422,6 +468,64 @@ class BackupRepository(
         }
     }
 
+    private fun uploadManifestReferences(settings: AppSettings, revision: Long, hashes: List<String>) {
+        val body = json.encodeToString(ManifestReferencesRequest(hashes)).toByteArray()
+        val connection = authenticatedConnection(
+            settings,
+            "/v1/manifests/${deviceId()}/history/$revision/references",
+            "PUT",
+        )
+        try {
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use { it.write(body) }
+            val status = connection.responseCode
+            if (status == HttpURLConnection.HTTP_NOT_FOUND) return // Server older than 0.1.7.
+            require(status in 200..299) { "Reference upload returned HTTP $status." }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun loadRestorePointers(settings: AppSettings): List<RemoteManifestPointer> {
+        val latest = json.decodeFromString<List<RemoteManifestPointer>>(
+            downloadBytes(settings, "/v1/manifests").toString(Charsets.UTF_8),
+        )
+        return latest.flatMap { pointer ->
+            runCatching {
+                json.decodeFromString<List<RemoteManifestPointer>>(
+                    downloadBytes(
+                        settings,
+                        "/v1/manifests/${pointer.deviceId}/history?limit=$HISTORY_LIMIT",
+                    ).toString(Charsets.UTF_8),
+                ).map { it.copy(historical = true) }
+            }.getOrElse { listOf(pointer) }
+        }.distinctBy { it.deviceId to it.revision }
+            .sortedByDescending(RemoteManifestPointer::revision)
+    }
+
+    private fun requestBytes(
+        settings: AppSettings,
+        path: String,
+        method: String,
+        body: ByteArray,
+    ): ByteArray {
+        val connection = authenticatedConnection(settings, path, method)
+        return try {
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use { it.write(body) }
+            require(connection.responseCode in 200..299) {
+                "Server request returned HTTP ${connection.responseCode}."
+            }
+            connection.inputStream.use { it.readBytes() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun downloadBytes(settings: AppSettings, path: String): ByteArray {
         val connection = authenticatedConnection(settings, path, "GET")
         return try {
@@ -538,5 +642,7 @@ class BackupRepository(
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_LAST_SUCCESS = "last_success"
         const val KEY_LAST_ERROR = "last_error"
+        const val KEY_CONSECUTIVE_FAILURES = "consecutive_failures"
+        const val HISTORY_LIMIT = 30
     }
 }

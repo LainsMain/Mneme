@@ -69,6 +69,7 @@ fun RichTextEditor(
     documentKey: String,
     state: RichTextEditorState,
     onDocumentChange: (RichTextDocument) -> Unit,
+    placeholder: String = "Give today a title, or simply start writing…",
     modifier: Modifier = Modifier,
 ) {
     val bringIntoViewRequester = remember(documentKey) { BringIntoViewRequester() }
@@ -150,7 +151,7 @@ fun RichTextEditor(
                 Box(Modifier.fillMaxWidth()) {
                     if (state.fieldValue.text.isEmpty()) {
                         Text(
-                            text = "Give today a title, or simply start writing…",
+                            text = placeholder,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                         )

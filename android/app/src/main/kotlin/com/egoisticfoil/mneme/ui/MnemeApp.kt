@@ -65,12 +65,15 @@ import com.egoisticfoil.mneme.ui.list.EntryListScreen
 import com.egoisticfoil.mneme.ui.map.MapScreen
 import com.egoisticfoil.mneme.ui.media.MediaScreen
 import com.egoisticfoil.mneme.ui.search.SearchScreen
+import com.egoisticfoil.mneme.ui.recap.MonthlyRecapScreen
 import com.egoisticfoil.mneme.data.ThemePreference
 import com.egoisticfoil.mneme.data.ReleaseInfo
 import com.egoisticfoil.mneme.data.ColorPalette
+import com.egoisticfoil.mneme.data.RemoteManifestPointer
 import com.egoisticfoil.mneme.ui.settings.SettingsScreen
 import com.egoisticfoil.mneme.ui.settings.SettingsUiState
 import java.time.LocalDate
+import java.time.YearMonth
 
 private enum class JournalDestination(val label: String) {
     Journal("Journal"),
@@ -101,6 +104,11 @@ fun MnemeApp(
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
+    onOpenRecap: (YearMonth) -> Unit,
+    onCloseRecap: () -> Unit,
+    onPreviousRecapMonth: () -> Unit,
+    onNextRecapMonth: () -> Unit,
+    onRecapDocumentChange: (com.egoisticfoil.mneme.model.RichTextDocument) -> Unit,
     settingsState: SettingsUiState,
     onThemeChange: (ThemePreference) -> Unit,
     onMaterialYouChange: (Boolean) -> Unit,
@@ -112,7 +120,10 @@ fun MnemeApp(
     onDisconnectServer: () -> Unit,
     onBackupNow: () -> Unit,
     onAcknowledgeRecoveryCode: () -> Unit,
-    onRestoreBackup: (String) -> Unit,
+    onRestoreBackup: (String, RemoteManifestPointer?) -> Unit,
+    onExportDiary: () -> Unit,
+    onRefreshServerOverview: () -> Unit,
+    onCollectServerGarbage: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: (ReleaseInfo) -> Unit,
     onInstallDownloadedUpdate: () -> Unit,
@@ -124,9 +135,12 @@ fun MnemeApp(
     var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
     var dismissedRecoveryReminder by rememberSaveable { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
-    BackHandler(enabled = showSettings || showSearch) {
-        showSettings = false
-        showSearch = false
+    BackHandler(enabled = showSettings || showSearch || state.recapMonth != null) {
+        when {
+            showSettings -> showSettings = false
+            showSearch -> showSearch = false
+            state.recapMonth != null -> onCloseRecap()
+        }
     }
 
     Scaffold(
@@ -148,7 +162,7 @@ fun MnemeApp(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            if (!showSettings && !showSearch) {
+                            if (!showSettings && !showSearch && state.recapMonth == null) {
                                 Surface(
                                     modifier = Modifier.size(34.dp),
                                     shape = RoundedCornerShape(11.dp),
@@ -168,6 +182,7 @@ fun MnemeApp(
                                 text = when {
                                     showSettings -> "Settings"
                                     showSearch -> "Search"
+                                    state.recapMonth != null -> "Monthly recap"
                                     else -> "Mneme"
                                 },
                                 style = MaterialTheme.typography.titleLarge,
@@ -176,10 +191,13 @@ fun MnemeApp(
                         }
                     },
                     navigationIcon = {
-                        if (showSettings || showSearch) {
+                        if (showSettings || showSearch || state.recapMonth != null) {
                             IconButton(onClick = {
-                                showSettings = false
-                                showSearch = false
+                                when {
+                                    showSettings -> showSettings = false
+                                    showSearch -> showSearch = false
+                                    else -> onCloseRecap()
+                                }
                             }) {
                                 Icon(
                                     Icons.AutoMirrored.Rounded.ArrowBack,
@@ -189,7 +207,7 @@ fun MnemeApp(
                         }
                     },
                     actions = {
-                        if (!showSettings && !showSearch) {
+                        if (!showSettings && !showSearch && state.recapMonth == null) {
                             TextButton(
                                 onClick = {
                                     when (destination) {
@@ -214,7 +232,7 @@ fun MnemeApp(
                         containerColor = Color.Transparent,
                     ),
                 )
-                if (!showSettings && !showSearch) {
+                if (!showSettings && !showSearch && state.recapMonth == null) {
                     JournalNavigation(
                         selected = destination,
                         onSelected = { destination = it },
@@ -224,7 +242,17 @@ fun MnemeApp(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { contentPadding ->
-        AnimatedContent(
+        if (state.recapMonth != null && !showSettings && !showSearch) {
+            MonthlyRecapScreen(
+                month = state.recapMonth,
+                document = state.recapDocument,
+                isSaving = state.recapIsSaving,
+                onPreviousMonth = onPreviousRecapMonth,
+                onNextMonth = onNextRecapMonth,
+                onDocumentChange = onRecapDocumentChange,
+                modifier = Modifier.fillMaxSize().padding(contentPadding),
+            )
+        } else AnimatedContent(
             targetState = Triple(showSettings, showSearch, destination),
             modifier = Modifier
                 .fillMaxSize()
@@ -245,6 +273,9 @@ fun MnemeApp(
                     onBackupNow = onBackupNow,
                     onAcknowledgeRecoveryCode = onAcknowledgeRecoveryCode,
                     onRestoreBackup = onRestoreBackup,
+                    onExportDiary = onExportDiary,
+                    onRefreshServerOverview = onRefreshServerOverview,
+                    onCollectServerGarbage = onCollectServerGarbage,
                     onCheckForUpdates = onCheckForUpdates,
                     onDownloadUpdate = onDownloadUpdate,
                     onInstallDownloadedUpdate = onInstallDownloadedUpdate,
@@ -293,6 +324,8 @@ fun MnemeApp(
                         onSelectDate(date)
                         destination = JournalDestination.Journal
                     },
+                    recapMonths = state.recapMonths,
+                    onOpenRecap = onOpenRecap,
                 )
 
                 JournalDestination.Media -> MediaScreen(

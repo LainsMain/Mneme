@@ -1,6 +1,7 @@
 package com.egoisticfoil.mneme
 
 import android.content.DialogInterface
+import android.Manifest
 import android.hardware.biometrics.BiometricPrompt
 import android.net.Uri
 import android.os.Bundle
@@ -14,6 +15,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.activity.result.contract.ActivityResultContracts.TakePicture
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +49,7 @@ class MainActivity : ComponentActivity() {
                     application.settingsRepository,
                     application.backupRepository,
                     application.updateRepository,
+                    application.exportRepository,
                 ),
             )
             val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
@@ -56,6 +60,17 @@ class MainActivity : ComponentActivity() {
             ) {
                 var unlocked by remember {
                     mutableStateOf(!settingsState.settings.appLockEnabled)
+                }
+                val notificationPermission = rememberLauncherForActivityResult(RequestPermission()) { }
+                LaunchedEffect(settingsState.settings.serverConnected) {
+                    if (
+                        settingsState.settings.serverConnected &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !application.settingsRepository.backupNotificationPermissionAsked()
+                    ) {
+                        application.settingsRepository.markBackupNotificationPermissionAsked()
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 }
                 val diaryViewModel: DiaryViewModel = viewModel(
                     factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
@@ -73,6 +88,9 @@ class MainActivity : ComponentActivity() {
                     if (saved && capturedUri != null) {
                         diaryViewModel.addPhotos(listOf(capturedUri))
                     }
+                }
+                val diaryExport = rememberLauncherForActivityResult(CreateDocument("application/zip")) { uri ->
+                    uri?.let(settingsViewModel::exportDiary)
                 }
                 val lifecycleOwner = LocalLifecycleOwner.current
                 val appLockEnabled by rememberUpdatedState(settingsState.settings.appLockEnabled)
@@ -134,6 +152,11 @@ class MainActivity : ComponentActivity() {
                     onPreviousMonth = diaryViewModel::previousMonth,
                     onNextMonth = diaryViewModel::nextMonth,
                     onCurrentMonth = diaryViewModel::currentMonth,
+                    onOpenRecap = diaryViewModel::openRecap,
+                    onCloseRecap = diaryViewModel::closeRecap,
+                    onPreviousRecapMonth = diaryViewModel::previousRecapMonth,
+                    onNextRecapMonth = diaryViewModel::nextRecapMonth,
+                    onRecapDocumentChange = diaryViewModel::updateRecapDocument,
                     settingsState = settingsState,
                     onThemeChange = settingsViewModel::setTheme,
                     onMaterialYouChange = settingsViewModel::setMaterialYou,
@@ -146,6 +169,11 @@ class MainActivity : ComponentActivity() {
                     onBackupNow = settingsViewModel::backupNow,
                     onAcknowledgeRecoveryCode = settingsViewModel::acknowledgeRecoveryCode,
                     onRestoreBackup = settingsViewModel::restoreBackup,
+                    onExportDiary = {
+                        diaryExport.launch("Mneme-diary-${java.time.LocalDate.now()}.zip")
+                    },
+                    onRefreshServerOverview = settingsViewModel::refreshServerOverview,
+                    onCollectServerGarbage = settingsViewModel::collectServerGarbage,
                     onCheckForUpdates = { settingsViewModel.checkForUpdates() },
                     onDownloadUpdate = settingsViewModel::downloadUpdate,
                     onInstallDownloadedUpdate = settingsViewModel::installDownloadedUpdate,

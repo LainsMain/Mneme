@@ -75,4 +75,34 @@ data class RemoteManifestPointer(
     val revision: Long,
     val objectHash: String,
     val updatedAt: String,
+    val referencesComplete: Boolean = false,
+    val historical: Boolean = false,
+)
+
+@Serializable
+data class ManifestReferencesRequest(val objectHashes: List<String>)
+
+@Serializable
+data class ServerStorageStats(
+    val objectCount: Long,
+    val objectBytes: Long,
+    val manifestHistoryCount: Long,
+    val completeManifestCount: Long,
+    val incompleteManifestCount: Long,
+)
+
+data class ServerOverview(
+    val snapshots: List<RemoteManifestPointer>,
+    val storage: ServerStorageStats,
+)
+
+@Serializable
+data class GarbageCollectionRequest(val keepManifestsPerDevice: Int = 30)
+
+@Serializable
+data class GarbageCollectionResult(
+    val prunedManifestCount: Long,
+    val deletedObjectCount: Long,
+    val reclaimedBytes: Long,
+    val storage: ServerStorageStats,
 )

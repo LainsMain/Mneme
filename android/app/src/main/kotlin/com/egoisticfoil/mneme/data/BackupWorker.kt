@@ -22,7 +22,16 @@ class BackupWorker(
         if (!application.settingsRepository.settings.value.serverConnected) return Result.success()
         return application.backupRepository.backupNow().fold(
             onSuccess = { Result.success() },
-            onFailure = { if (runAttemptCount < 3) Result.retry() else Result.failure() },
+            onFailure = { error ->
+                if (runAttemptCount < 3) {
+                    Result.retry()
+                } else {
+                    BackupNotificationManager(applicationContext).showFailure(
+                        error.message ?: "Your latest diary changes could not be backed up.",
+                    )
+                    Result.failure()
+                }
+            },
         )
     }
 

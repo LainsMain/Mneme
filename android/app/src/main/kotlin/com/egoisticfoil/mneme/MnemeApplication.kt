@@ -8,6 +8,7 @@ import com.egoisticfoil.mneme.data.PlaceSearchRepository
 import com.egoisticfoil.mneme.data.BackupRepository
 import com.egoisticfoil.mneme.data.BackupWorker
 import com.egoisticfoil.mneme.data.UpdateRepository
+import com.egoisticfoil.mneme.data.DiaryExportRepository
 import org.maplibre.android.MapLibre
 
 class MnemeApplication : Application() {
@@ -17,6 +18,7 @@ class MnemeApplication : Application() {
     val placeSearchRepository by lazy { PlaceSearchRepository(this) }
     val backupRepository by lazy { BackupRepository(this, database.diaryDao(), settingsRepository) }
     val updateRepository by lazy { UpdateRepository(this) }
+    val exportRepository by lazy { DiaryExportRepository(this, database.diaryDao()) }
 
     override fun onCreate() {
         super.onCreate()

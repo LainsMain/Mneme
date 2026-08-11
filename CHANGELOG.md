@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7
+
+- Add editable rich-text monthly recaps directly from each month in the continuous calendar.
+- Keep encrypted backup history per device and allow a chosen snapshot to be restored on a fresh installation.
+- Show encrypted server storage usage and provide conservative cleanup that retains the newest 30 snapshots per device.
+- Upload opaque object-reference indexes so the server can reclaim unused ciphertext without learning diary contents.
+- Surface repeated backup failures in Settings and through an Android notification after automatic retries are exhausted.
+- Export the whole diary as a readable ZIP containing an HTML index, HTML and Markdown entries, monthly recaps, original photos, and preserved photo metadata.
+
 ## 0.1.6
 
 - Let cursor formatting buttons reliably turn inherited bold, italic, underline, heading, and strikethrough off and back on.

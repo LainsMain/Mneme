@@ -26,8 +26,21 @@ interface DiaryDao {
     @Query("SELECT * FROM monthly_recaps WHERE deletedAtEpochMillis IS NULL ORDER BY yearMonth")
     suspend fun recapsForBackup(): List<MonthlyRecapEntity>
 
+    @Query("SELECT * FROM monthly_recaps WHERE yearMonth = :yearMonth AND deletedAtEpochMillis IS NULL LIMIT 1")
+    fun observeRecap(yearMonth: String): Flow<MonthlyRecapEntity?>
+
+    @Query("SELECT yearMonth FROM monthly_recaps WHERE deletedAtEpochMillis IS NULL ORDER BY yearMonth")
+    fun observeRecapMonths(): Flow<List<String>>
+
     @Query("SELECT (SELECT COUNT(*) FROM diary_pages) + (SELECT COUNT(*) FROM attachments) + (SELECT COUNT(*) FROM monthly_recaps)")
     suspend fun localContentCount(): Int
+
+    @Transaction
+    suspend fun exportSnapshot(): DiaryExportSnapshot = DiaryExportSnapshot(
+        pages = pagesForBackup(),
+        attachments = attachmentsForBackup(),
+        recaps = recapsForBackup(),
+    )
 
     @Query("SELECT * FROM diary_pages WHERE diaryDate = :diaryDate AND deletedAtEpochMillis IS NULL LIMIT 1")
     fun observePage(diaryDate: String): Flow<DiaryPageEntity?>
@@ -151,6 +164,9 @@ interface DiaryDao {
     @Upsert
     suspend fun upsertRecap(recap: MonthlyRecapEntity)
 
+    @Query("SELECT * FROM monthly_recaps WHERE id = :id LIMIT 1")
+    suspend fun recapById(id: String): MonthlyRecapEntity?
+
     @Transaction
     suspend fun restoreBackup(
         pages: List<DiaryPageEntity>,
@@ -233,4 +249,10 @@ data class MonthDayRow(
 data class MediaAttachmentRow(
     @Embedded val attachment: AttachmentEntity,
     val diaryDate: String,
+)
+
+data class DiaryExportSnapshot(
+    val pages: List<DiaryPageEntity>,
+    val attachments: List<AttachmentEntity>,
+    val recaps: List<MonthlyRecapEntity>,
 )
