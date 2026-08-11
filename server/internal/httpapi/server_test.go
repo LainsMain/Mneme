@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/egoisticfoil/mneme/server/internal/store"
@@ -88,39 +87,6 @@ func TestProtectedEndpointRejectsMissingToken(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("got %s, want 401 Unauthorized", response.Status)
-	}
-}
-
-func TestAuthenticatedPlaceSearchProxiesPhoton(t *testing.T) {
-	photon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api" || r.URL.Query().Get("q") != "Antwerp" || r.URL.Query().Get("limit") != "4" {
-			t.Fatalf("unexpected Photon request %s", r.URL.String())
-		}
-		w.Header().Set("Content-Type", "application/geo+json")
-		_, _ = io.WriteString(w, `{"type":"FeatureCollection","features":[]}`)
-	}))
-	defer photon.Close()
-
-	dataStore, err := store.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dataStore.Close()
-	token, _, err := dataStore.CreateToken(context.Background(), "test phone")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(New(
-		dataStore,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		WithPhotonURL(photon.URL),
-	).Handler())
-	defer server.Close()
-
-	response := authenticatedRequest(t, http.MethodGet, server.URL+"/v1/places/search?q=Antwerp&limit=4", token, nil)
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || !strings.Contains(readBody(response.Body), "FeatureCollection") {
-		t.Fatalf("unexpected response %s", response.Status)
 	}
 }
 

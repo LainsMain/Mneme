@@ -62,7 +62,6 @@ func serve(config config.Config) error {
 		Handler: httpapi.New(
 			dataStore,
 			logger,
-			httpapi.WithPhotonURL(config.PhotonURL),
 			httpapi.WithVersion(version),
 		).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

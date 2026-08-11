@@ -250,6 +250,10 @@ class DiaryRepository(
         diaryDao.setManualLocation(pageId, name, latitude, longitude, clock.millis())
     }
 
+    suspend fun setAutomaticLocationName(pageId: String, name: String?) = withContext(Dispatchers.IO) {
+        diaryDao.setAutomaticLocationName(pageId, name, clock.millis())
+    }
+
     suspend fun usePrimaryPhotoLocation(pageId: String) = withContext(Dispatchers.IO) {
         diaryDao.clearManualLocation(pageId, clock.millis())
     }

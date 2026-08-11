@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -24,19 +23,13 @@ const (
 )
 
 type Server struct {
-	store      *store.Store
-	logger     *slog.Logger
-	mux        *http.ServeMux
-	photonURL  string
-	httpClient *http.Client
-	version    string
+	store   *store.Store
+	logger  *slog.Logger
+	mux     *http.ServeMux
+	version string
 }
 
 type Option func(*Server)
-
-func WithPhotonURL(value string) Option {
-	return func(server *Server) { server.photonURL = strings.TrimRight(value, "/") }
-}
 
 func WithVersion(value string) Option {
 	return func(server *Server) { server.version = value }
@@ -44,18 +37,16 @@ func WithVersion(value string) Option {
 
 func New(dataStore *store.Store, logger *slog.Logger, options ...Option) *Server {
 	s := &Server{
-		store:      dataStore,
-		logger:     logger,
-		mux:        http.NewServeMux(),
-		httpClient: &http.Client{Timeout: 8 * time.Second},
-		version:    "dev",
+		store:   dataStore,
+		logger:  logger,
+		mux:     http.NewServeMux(),
+		version: "dev",
 	}
 	for _, option := range options {
 		option(s)
 	}
 	s.mux.HandleFunc("GET /v1/health", s.health)
 	s.mux.Handle("GET /v1/vault/status", s.authenticate(http.HandlerFunc(s.status)))
-	s.mux.Handle("GET /v1/places/search", s.authenticate(http.HandlerFunc(s.searchPlaces)))
 	s.mux.Handle("PUT /v1/objects/{hash}", s.authenticate(http.HandlerFunc(s.putObject)))
 	s.mux.Handle("GET /v1/objects/{hash}", s.authenticate(http.HandlerFunc(s.getObject)))
 	s.mux.Handle("HEAD /v1/objects/{hash}", s.authenticate(http.HandlerFunc(s.getObject)))
@@ -63,57 +54,6 @@ func New(dataStore *store.Store, logger *slog.Logger, options ...Option) *Server
 	s.mux.Handle("GET /v1/manifests/{device}", s.authenticate(http.HandlerFunc(s.getManifest)))
 	s.mux.Handle("GET /v1/manifests", s.authenticate(http.HandlerFunc(s.listManifests)))
 	return s
-}
-
-func (s *Server) searchPlaces(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if len([]rune(query)) < 2 || len([]rune(query)) > 160 {
-		writeError(w, http.StatusBadRequest, "q must contain between 2 and 160 characters")
-		return
-	}
-	if s.photonURL == "" {
-		writeError(w, http.StatusServiceUnavailable, "place search is not configured")
-		return
-	}
-	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
-	if err != nil || limit < 1 || limit > 10 {
-		limit = 6
-	}
-	endpoint, err := url.Parse(s.photonURL + "/api")
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "place search is not configured")
-		return
-	}
-	parameters := endpoint.Query()
-	parameters.Set("q", query)
-	parameters.Set("limit", strconv.Itoa(limit))
-	for _, key := range []string{"lang", "lat", "lon"} {
-		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
-			parameters.Set(key, value)
-		}
-	}
-	endpoint.RawQuery = parameters.Encode()
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "build place search request")
-		return
-	}
-	request.Header.Set("Accept", "application/geo+json, application/json")
-	request.Header.Set("User-Agent", "Mneme/1.0 self-hosted geocoder")
-	response, err := s.httpClient.Do(request)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "place search is starting or unavailable")
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		writeError(w, http.StatusBadGateway, "place search returned "+response.Status)
-		return
-	}
-	w.Header().Set("Content-Type", "application/geo+json")
-	w.Header().Set("X-Data-Attribution", "OpenStreetMap contributors")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, io.LimitReader(response.Body, 2<<20))
 }
 
 func (s *Server) Handler() http.Handler {

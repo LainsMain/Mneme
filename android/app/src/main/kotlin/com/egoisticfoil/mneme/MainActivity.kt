@@ -124,6 +124,7 @@ class MainActivity : ComponentActivity() {
                     onMakePhotoPrimary = diaryViewModel::makePhotoPrimary,
                     onDeletePhoto = diaryViewModel::deletePhoto,
                     onSetLocation = diaryViewModel::setLocation,
+                    onSetLocationFromMap = diaryViewModel::setLocationFromMap,
                     onUsePhotoLocation = diaryViewModel::usePrimaryPhotoLocation,
                     onSearchPlaces = diaryViewModel::searchPlaces,
                     onClearPlaceSearch = diaryViewModel::clearPlaceSearch,

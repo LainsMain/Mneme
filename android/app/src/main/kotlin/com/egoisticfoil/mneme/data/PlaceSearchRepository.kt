@@ -1,15 +1,12 @@
 package com.egoisticfoil.mneme.data
 
-import java.net.HttpURLConnection
-import java.net.URLEncoder
-import java.net.URL
+import android.content.Context
+import android.location.Address
+import android.location.Geocoder
+import java.io.IOException
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 data class PlaceSuggestion(
     val name: String,
@@ -18,64 +15,90 @@ data class PlaceSuggestion(
     val longitude: Double,
 )
 
-class PlaceSearchRepository(
-    private val settingsRepository: AppSettingsRepository,
-    private val json: Json = Json { ignoreUnknownKeys = true },
-) {
+/** Uses the geocoder supplied by Android or the device manufacturer. */
+class PlaceSearchRepository(context: Context) {
+    private val applicationContext = context.applicationContext
+
     suspend fun search(query: String, language: String, limit: Int = 6): Result<List<PlaceSuggestion>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val settings = settingsRepository.settings.value
-                require(settings.serverConnected && settings.serverUrl.isNotBlank() && settings.serverToken.isNotBlank()) {
-                    "Connect your Mneme server in Settings to search places."
-                }
-                val encodedQuery = URLEncoder.encode(query.trim(), Charsets.UTF_8.name())
-                val encodedLanguage = URLEncoder.encode(language, Charsets.UTF_8.name())
-                val connection = URL(
-                    "${settings.serverUrl}/v1/places/search?q=$encodedQuery&limit=${limit.coerceIn(1, 10)}&lang=$encodedLanguage",
-                ).openConnection() as HttpURLConnection
-                try {
-                    connection.requestMethod = "GET"
-                    connection.connectTimeout = 10_000
-                    connection.readTimeout = 10_000
-                    connection.setRequestProperty("Authorization", "Bearer ${settings.serverToken}")
-                    connection.setRequestProperty("Accept", "application/geo+json")
-                    when (val code = connection.responseCode) {
-                        HttpURLConnection.HTTP_OK -> parseSuggestions(
-                            connection.inputStream.bufferedReader().use { it.readText() },
-                        )
-                        HttpURLConnection.HTTP_BAD_GATEWAY,
-                        HttpURLConnection.HTTP_UNAVAILABLE,
-                        -> error("The self-hosted place index is still starting.")
-                        HttpURLConnection.HTTP_UNAUTHORIZED -> error("The server rejected your access token.")
-                        else -> error("Place search returned HTTP $code.")
-                    }
-                } finally {
-                    connection.disconnect()
-                }
-            }
+                requireGeocoder()
+                val geocoder = Geocoder(applicationContext, locale(language))
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocationName(query.trim(), limit.coerceIn(1, 10))
+                    .orEmpty()
+                    .map { it.toSuggestion() }
+                    .distinctBy { Triple(it.name, it.latitude, it.longitude) }
+            }.mapFailure()
         }
 
-    private fun parseSuggestions(response: String): List<PlaceSuggestion> =
-        json.parseToJsonElement(response).jsonObject["features"]?.jsonArray.orEmpty().mapNotNull { element ->
-            val feature = element.jsonObject
-            val properties = feature["properties"]?.jsonObject ?: return@mapNotNull null
-            val coordinates = feature["geometry"]?.jsonObject?.get("coordinates")?.jsonArray
-                ?: return@mapNotNull null
-            val longitude = coordinates.getOrNull(0)?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
-            val latitude = coordinates.getOrNull(1)?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
-            val name = properties.string("name") ?: properties.string("street") ?: return@mapNotNull null
-            val address = listOfNotNull(
-                listOfNotNull(properties.string("street"), properties.string("housenumber"))
-                    .joinToString(" ").takeIf { it.isNotBlank() && it != name },
-                properties.string("postcode"),
-                properties.string("city") ?: properties.string("locality"),
-                properties.string("state"),
-                properties.string("country"),
-            ).distinct().joinToString(", ")
-            PlaceSuggestion(name, address, latitude, longitude)
-        }.distinctBy { Triple(it.name, it.latitude, it.longitude) }
+    suspend fun reverse(
+        latitude: Double,
+        longitude: Double,
+        language: String,
+    ): Result<PlaceSuggestion?> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(latitude in -90.0..90.0 && longitude in -180.0..180.0) {
+                "Invalid map coordinates."
+            }
+            requireGeocoder()
+            val geocoder = Geocoder(applicationContext, locale(language))
+            @Suppress("DEPRECATION")
+            geocoder.getFromLocation(latitude, longitude, 1)
+                .orEmpty()
+                .firstOrNull()
+                ?.toSuggestion()
+        }.mapFailure()
+    }
 
-    private fun kotlinx.serialization.json.JsonObject.string(key: String): String? =
-        this[key]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+    private fun requireGeocoder() {
+        check(Geocoder.isPresent()) {
+            "Location search is unavailable on this device. You can still choose a point on the map."
+        }
+    }
+
+    private fun locale(language: String): Locale =
+        Locale.forLanguageTag(language).takeUnless { it.language.isBlank() } ?: Locale.getDefault()
+
+    private fun Address.toSuggestion(): PlaceSuggestion {
+        val fullAddress = getAddressLine(0).orEmpty()
+        val conciseName = listOfNotNull(
+            featureName?.takeUnless { it.isMostlyNumeric() },
+            premises,
+            thoroughfare,
+            subLocality,
+            locality,
+            subAdminArea,
+            adminArea,
+            countryName,
+        ).firstOrNull { it.isNotBlank() } ?: fullAddress.ifBlank {
+            "${"%.5f".format(Locale.ROOT, latitude)}, ${"%.5f".format(Locale.ROOT, longitude)}"
+        }
+        return PlaceSuggestion(
+            name = conciseName,
+            address = fullAddress.takeUnless { it.equals(conciseName, ignoreCase = true) }.orEmpty(),
+            latitude = latitude,
+            longitude = longitude,
+        )
+    }
+
+    private fun String.isMostlyNumeric(): Boolean {
+        val meaningful = filter(Char::isLetterOrDigit)
+        return meaningful.isNotEmpty() && meaningful.none(Char::isLetter)
+    }
+
+    private fun <T> Result<T>.mapFailure(): Result<T> = fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { error ->
+            Result.failure(
+                when (error) {
+                    is IllegalArgumentException,
+                    is IllegalStateException,
+                    -> error
+                    is IOException -> IOException("The device location service could not be reached.", error)
+                    else -> IOException("Could not search locations on this device.", error)
+                },
+            )
+        },
+    )
 }

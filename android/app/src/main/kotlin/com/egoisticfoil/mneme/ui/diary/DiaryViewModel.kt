@@ -16,6 +16,7 @@ import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,9 @@ class DiaryViewModel(
     private var observeAllDaysJob: Job? = null
     private var observeMediaJob: Job? = null
     private var placeSearchJob: Job? = null
+    private var automaticLocationJob: Job? = null
+    private var automaticLocationKey: String? = null
+    private var attachmentsLoaded = false
     private var dirty = false
 
     init {
@@ -160,14 +164,24 @@ class DiaryViewModel(
 
     fun setLocation(name: String, latitude: Double?, longitude: Double?) {
         viewModelScope.launch {
-            saveImmediately()
-            val page = currentPage ?: repository.save(
-                date = _uiState.value.selectedDate,
-                existing = null,
-                document = _uiState.value.document,
-            ).also { currentPage = it }
-            repository.setManualLocation(page.id, name.trim().ifBlank { null }, latitude, longitude)
+            val resolvedName = name.trim().ifBlank {
+                if (latitude != null && longitude != null) {
+                    placeSearchRepository.reverse(latitude, longitude, Locale.getDefault().language)
+                        .getOrNull()
+                        ?.name
+                        .orEmpty()
+                        .ifBlank { formatCoordinates(latitude, longitude) }
+                } else {
+                    "Custom location"
+                }
+            }
+            val page = pageForLocation()
+            repository.setManualLocation(page.id, resolvedName, latitude, longitude)
         }
+    }
+
+    fun setLocationFromMap(latitude: Double, longitude: Double) {
+        setLocation("", latitude, longitude)
     }
 
     fun usePrimaryPhotoLocation() {
@@ -183,7 +197,7 @@ class DiaryViewModel(
             return
         }
         placeSearchJob = viewModelScope.launch {
-            delay(300)
+            delay(450)
             _uiState.value = _uiState.value.copy(isSearchingPlaces = true, placeSearchMessage = null)
             placeSearchRepository.search(query, java.util.Locale.getDefault().language).fold(
                 onSuccess = { suggestions ->
@@ -218,6 +232,9 @@ class DiaryViewModel(
         observeAttachmentsJob?.cancel()
         dirty = false
         currentPage = null
+        automaticLocationJob?.cancel()
+        automaticLocationKey = null
+        attachmentsLoaded = false
         _uiState.value = _uiState.value.copy(
             selectedDate = date,
             document = RichTextDocument(),
@@ -239,14 +256,17 @@ class DiaryViewModel(
                         location = effectiveLocation(page, _uiState.value.attachments),
                     )
                 }
+                if (attachmentsLoaded) refreshAutomaticPhotoLocation(page, _uiState.value.attachments)
             }
         }
         observeAttachmentsJob = viewModelScope.launch {
             repository.observeAttachments(date).collect { attachments ->
+                attachmentsLoaded = true
                 _uiState.value = _uiState.value.copy(
                     attachments = attachments,
                     location = effectiveLocation(currentPage, attachments),
                 )
+                refreshAutomaticPhotoLocation(currentPage, attachments)
             }
         }
     }
@@ -280,11 +300,53 @@ class DiaryViewModel(
             ?.takeIf { it.latitude != null && it.longitude != null }
             ?: return null
         return DiaryLocation(
-            name = "Primary photo location",
+            name = page?.locationName ?: "Primary photo location",
             latitude = primary.latitude,
             longitude = primary.longitude,
             isManual = false,
         )
+    }
+
+    private fun refreshAutomaticPhotoLocation(
+        page: DiaryPage?,
+        attachments: List<DiaryAttachment>,
+    ) {
+        if (page == null || page.locationIsManual) {
+            automaticLocationJob?.cancel()
+            automaticLocationKey = null
+            return
+        }
+        val primary = attachments.firstOrNull()?.takeIf {
+            it.latitude != null && it.longitude != null
+        }
+        if (primary == null) {
+            val emptyKey = "${page.id}:none"
+            if (automaticLocationKey == emptyKey) return
+            automaticLocationKey = emptyKey
+            automaticLocationJob?.cancel()
+            if (page.locationName != null) {
+                automaticLocationJob = viewModelScope.launch {
+                    repository.setAutomaticLocationName(page.id, null)
+                }
+            }
+            return
+        }
+        val latitude = primary.latitude!!
+        val longitude = primary.longitude!!
+        val key = "${page.id}:${primary.id}:$latitude:$longitude"
+        if (automaticLocationKey == key) return
+        automaticLocationKey = key
+        automaticLocationJob?.cancel()
+        automaticLocationJob = viewModelScope.launch {
+            val resolvedName = placeSearchRepository.reverse(
+                latitude,
+                longitude,
+                Locale.getDefault().language,
+            ).getOrNull()?.name
+            if (automaticLocationKey == key && currentPage?.locationIsManual != true) {
+                repository.setAutomaticLocationName(page.id, resolvedName)
+            }
+        }
     }
 
     private fun observeMonth(month: YearMonth) {
@@ -301,6 +363,18 @@ class DiaryViewModel(
         if (!dirty) return
         save(_uiState.value.selectedDate, _uiState.value.document)
     }
+
+    private suspend fun pageForLocation(): DiaryPage {
+        saveImmediately()
+        return currentPage ?: repository.save(
+            date = _uiState.value.selectedDate,
+            existing = null,
+            document = _uiState.value.document,
+        ).also { currentPage = it }
+    }
+
+    private fun formatCoordinates(latitude: Double, longitude: Double): String =
+        "${"%.5f".format(Locale.ROOT, latitude)}, ${"%.5f".format(Locale.ROOT, longitude)}"
 
     private suspend fun save(date: LocalDate, document: RichTextDocument) {
         if (date != _uiState.value.selectedDate) return
