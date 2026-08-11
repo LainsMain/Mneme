@@ -173,6 +173,15 @@ interface DiaryDao {
 
     @Query(
         """
+        UPDATE diary_pages SET locationName = :name,
+            updatedAtEpochMillis = :updatedAt, revision = revision + 1
+        WHERE id = :pageId AND locationIsManual = 0 AND locationName IS NOT :name
+        """,
+    )
+    suspend fun setAutomaticLocationName(pageId: String, name: String?, updatedAt: Long)
+
+    @Query(
+        """
         UPDATE diary_pages SET locationName = NULL, latitude = NULL, longitude = NULL,
             locationIsManual = 0, updatedAtEpochMillis = :updatedAt, revision = revision + 1
         WHERE id = :pageId

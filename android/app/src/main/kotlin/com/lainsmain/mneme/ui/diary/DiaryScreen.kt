@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -59,6 +60,7 @@ import com.lainsmain.mneme.model.RichTextDocument
 import com.lainsmain.mneme.ui.editor.RichTextEditor
 import com.lainsmain.mneme.ui.editor.RichTextFormattingBar
 import com.lainsmain.mneme.ui.editor.rememberRichTextEditorState
+import com.lainsmain.mneme.ui.map.LocationPickerDialog
 import com.lainsmain.mneme.ui.photo.FullScreenPhotoViewer
 import com.lainsmain.mneme.ui.photo.PhotoMosaic
 import java.time.LocalDate
@@ -76,6 +78,7 @@ fun DiaryScreen(
     onMakePhotoPrimary: (String) -> Unit,
     onDeletePhoto: (String) -> Unit,
     onSetLocation: (String, Double?, Double?) -> Unit,
+    onSetLocationFromMap: (Double, Double) -> Unit,
     onUsePhotoLocation: () -> Unit,
     onSearchPlaces: (String) -> Unit,
     onClearPlaceSearch: () -> Unit,
@@ -85,6 +88,7 @@ fun DiaryScreen(
         mutableStateOf<DiaryAttachment?>(null)
     }
     var showLocationDialog by remember(state.selectedDate) { mutableStateOf(false) }
+    var showMapPicker by remember(state.selectedDate) { mutableStateOf(false) }
     val editorState = rememberRichTextEditorState(state.selectedDate.toString(), state.document)
 
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -212,6 +216,25 @@ fun DiaryScreen(
             onUsePhotoLocation = {
                 onUsePhotoLocation()
                 showLocationDialog = false
+            },
+            onChooseOnMap = {
+                onClearPlaceSearch()
+                showLocationDialog = false
+                showMapPicker = true
+            },
+        )
+    }
+    if (showMapPicker) {
+        LocationPickerDialog(
+            initialLatitude = state.location?.latitude,
+            initialLongitude = state.location?.longitude,
+            onDismiss = {
+                showMapPicker = false
+                showLocationDialog = true
+            },
+            onConfirm = { latitude, longitude ->
+                onSetLocationFromMap(latitude, longitude)
+                showMapPicker = false
             },
         )
     }
@@ -370,6 +393,7 @@ private fun LocationDialog(
     onSelectSuggestion: (PlaceSuggestion) -> Unit,
     onSave: (String, Double?, Double?) -> Unit,
     onUsePhotoLocation: () -> Unit,
+    onChooseOnMap: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var name by remember(location) { mutableStateOf(location?.name.orEmpty()) }
@@ -407,12 +431,16 @@ private fun LocationDialog(
                     Text(
                         it,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (it.startsWith("Connect") || it.startsWith("Could") || it.startsWith("The server")) {
+                        color = if (it.startsWith("Location search") || it.startsWith("Could") || it.startsWith("The device")) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
+                }
+                OutlinedButton(onClick = onChooseOnMap, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.Map, contentDescription = null, Modifier.size(18.dp))
+                    Text("Choose on map", modifier = Modifier.padding(start = 8.dp))
                 }
                 HorizontalDivider()
                 Text(

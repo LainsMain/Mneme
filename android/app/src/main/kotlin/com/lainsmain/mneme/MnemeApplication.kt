@@ -14,7 +14,7 @@ class MnemeApplication : Application() {
     val database by lazy { MnemeDatabase.create(this) }
     val diaryRepository by lazy { DiaryRepository(this, database.diaryDao()) }
     val settingsRepository by lazy { AppSettingsRepository(this) }
-    val placeSearchRepository by lazy { PlaceSearchRepository(settingsRepository) }
+    val placeSearchRepository by lazy { PlaceSearchRepository(this) }
     val backupRepository by lazy { BackupRepository(this, database.diaryDao(), settingsRepository) }
     val updateRepository by lazy { UpdateRepository(this) }
 
