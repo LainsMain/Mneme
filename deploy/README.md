@@ -1,20 +1,18 @@
 # Deploying Mneme
 
-The Compose stack contains the Mneme encrypted-backup API and a self-hosted
-Photon place-search index. No Google Maps or Places key is required. The default
-Photon region is Belgium and can be changed with `PHOTON_REGION` in `.env`.
+The Compose stack contains the lightweight Mneme encrypted-backup API. Place
+search and reverse geocoding run on the Android device and do not use this
+server.
 
-For local development, start the API and geocoder:
+For local development, start the API:
 
 ```bash
 cd deploy
 cp .env.example .env
-docker compose up -d --build mneme-server photon
+docker compose up -d --build mneme-server
 ```
 
-The first Photon start downloads and imports the selected regional dataset, so
-it can take several minutes. Check readiness with
-`curl http://127.0.0.1:2322/status`. The Android emulator reaches the API at
+The Android emulator reaches the API at
 `http://10.0.2.2:8080`; debug builds permit this local cleartext address.
 
 Create a one-time app token for a phone:
@@ -48,8 +46,7 @@ docker compose --profile tunnel up -d
 ```
 
 The persistent `mneme-data` volume contains the SQLite catalog and opaque
-encrypted objects. `photon-data` contains the replaceable search index. Back up
-`mneme-data` as part of normal host administration.
+encrypted objects. Back it up as part of normal host administration.
 
 ## Updating
 

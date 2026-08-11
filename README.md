@@ -20,7 +20,7 @@ This repository currently contains the first vertical slice:
 - An autosaving Room-backed rich-text document with bold, italic, underline,
   heading, and strike-through formatting.
 - Persistence models for original photo files and full EXIF/GPS metadata.
-- A keyless MapLibre map, OpenFreeMap tiles, and self-hosted Photon autocomplete.
+- A keyless MapLibre map, OpenFreeMap tiles, and device-native location search.
 - Android-side AES-GCM vault encryption with manual and scheduled backups.
 - A Go service with hashed per-device tokens and opaque object storage.
 - Docker Compose deployment with optional remotely managed Cloudflare Tunnel.
@@ -40,10 +40,10 @@ The debug APK is written under `android/app/build/outputs/apk/debug/`.
 
 ### Maps and place search
 
-The map uses MapLibre with keyless OpenFreeMap styles. Location autocomplete is
-proxied through the authenticated Mneme server to its self-hosted Photon index,
-so diary clients do not contact a commercial places API. Connect the server in
-Settings, then use **Add a place** on any entry.
+The map uses MapLibre with keyless OpenFreeMap styles. Search and reverse
+geocoding use Android's built-in geocoder, while manual map pinning remains
+available when a device geocoder cannot return a result. Photo GPS coordinates
+are reverse-geocoded automatically. The backup server is not involved in maps.
 
 ## Server
 
@@ -59,8 +59,7 @@ docker compose exec mneme-server /mneme token create --name "My phone"
 ```
 
 Add `--profile tunnel` to `docker compose up -d` after putting a remotely
-managed Cloudflare tunnel token in `.env`. Photon defaults to Belgium; edit
-`PHOTON_REGION` before the first start to use another region.
+managed Cloudflare tunnel token in `.env`.
 
 For development directly from the source tree:
 

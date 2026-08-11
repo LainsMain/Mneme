@@ -19,35 +19,6 @@ paths:
       responses:
         "200":
           description: Server capabilities, API version, and release version used for compatibility checks.
-  /places/search:
-    get:
-      description: Search the server's self-hosted Photon/OpenStreetMap index.
-      parameters:
-        - name: q
-          in: query
-          required: true
-          schema:
-            type: string
-            minLength: 2
-            maxLength: 160
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 10
-            default: 6
-        - name: lang
-          in: query
-          schema:
-            type: string
-      responses:
-        "200":
-          description: A Photon GeoJSON feature collection with OpenStreetMap attribution.
-          content:
-            application/geo+json: {}
-        "502":
-          description: The local Photon service is starting or unavailable.
   /objects/{hash}:
     parameters:
       - name: hash
