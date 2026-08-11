@@ -6,7 +6,7 @@ such as `v0.2.0` starts `.github/workflows/release.yml`, which:
 1. runs the Android and Go tests;
 2. builds a signed, versioned APK;
 3. publishes `lainsmain/mneme-server:0.2.0` and `:latest` for amd64/arm64;
-4. creates a GitHub release and attaches the APK.
+4. creates a GitHub release and attaches the APK and MIT license.
 
 Configure these encrypted GitHub Actions secrets before tagging:
 
