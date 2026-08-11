@@ -21,10 +21,12 @@ This repository currently contains the first vertical slice:
   heading, and strike-through formatting.
 - Persistence models for original photo files and full EXIF/GPS metadata.
 - A keyless MapLibre map, OpenFreeMap tiles, and device-native location search.
-- Android-side AES-GCM vault encryption with manual and scheduled backups.
+- Android-side AES-256-GCM vault encryption, after-edit and periodic backups,
+  and recovery-code restore onto a new phone.
 - A Go service with hashed per-device tokens and opaque object storage.
 - Docker Compose deployment with optional remotely managed Cloudflare Tunnel.
-- Automatic GitHub release checks and app/server version compatibility notices.
+- Automatic GitHub release checks, verified in-app APK downloads, and app/server
+  version compatibility notices.
 
 ## Android
 
@@ -77,7 +79,9 @@ The health endpoint is `http://localhost:8080/v1/health`. See
 
 Stable APKs are published on the [GitHub Releases page](https://github.com/LainsMain/Mneme/releases).
 Mneme checks that feed when it opens and offers a Download/Later dialog for a
-newer version; Settings also contains a manual check. The connected server
+newer version; Settings also contains a manual check. APK downloads use
+Android's Download Manager for background progress and are checked against the
+SHA-256 digest published by GitHub before Android's installer is opened. The connected server
 reports its embedded release version, allowing the app to warn when the Docker
 deployment is older than the latest matching release.
 
@@ -85,12 +89,20 @@ A semantic tag automatically builds the signed APK and publishes
 `lainsmain/mneme-server:<version>` plus `latest`. See
 [`RELEASING.md`](RELEASING.md) for the required encrypted repository secrets.
 
-## Important security boundary
+## Backup and recovery
 
 The server is intentionally an opaque blob store: manifests and original photos
-are AES-256-GCM encrypted on Android before upload. A tested restore flow and
-user-held recovery-key export are still required before treating backups as the
-only copy of important diary data.
+are AES-256-GCM encrypted on Android before upload. Mneme schedules a backup
+shortly after diary changes when online and keeps a roughly six-hour periodic
+fallback. Android may defer background work during Doze or while offline.
+
+Settings shows the last successful backup and a portable recovery code. Store
+that code outside the phone: a fresh Mneme installation can connect to the same
+server, choose **Restore on this device**, and decrypt the latest matching
+backup with it. Neither the server token nor the server administrator can
+decrypt a backup without the recovery code. Backups created before 0.1.5 used a
+device-bound Android Keystore key, so upgrade users must make one fresh backup
+and save the new code before relying on disaster recovery.
 
 ## Security
 

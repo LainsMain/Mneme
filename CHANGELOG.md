@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.5
+
+- Add portable recovery codes and a safe new-phone restore flow for encrypted diary entries, original photos, metadata, and monthly recaps.
+- Back up about 30 seconds after diary changes when online, with the existing six-hour periodic job retained as a fallback.
+- Show the last successful backup and require an explicit recovery-code save reminder.
+- Download updates through Android with notification progress, verify GitHub's SHA-256 digest, and open the system installer when ready.
+- Check for releases on every fresh app launch and whenever a long-running app returns to the foreground after the cache expires.
+- Open the Android biometric prompt automatically whenever a protected diary locks again.
+
 ## 0.1.4
 
 - Move place search and reverse geocoding to Android's built-in geocoder.
