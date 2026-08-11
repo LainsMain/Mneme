@@ -47,6 +47,23 @@ Settings, then use **Add a place** on any entry.
 
 ## Server
 
+The production [Compose file](compose.yaml) is kept at the repository root and
+is also attached to every GitHub release. On a Docker host:
+
+```bash
+curl -LO https://github.com/LainsMain/Mneme/releases/latest/download/compose.yaml
+curl -LO https://github.com/LainsMain/Mneme/releases/latest/download/.env.example
+cp .env.example .env
+docker compose up -d
+docker compose exec mneme-server /mneme token create --name "My phone"
+```
+
+Add `--profile tunnel` to `docker compose up -d` after putting a remotely
+managed Cloudflare tunnel token in `.env`. Photon defaults to Belgium; edit
+`PHOTON_REGION` before the first start to use another region.
+
+For development directly from the source tree:
+
 ```bash
 cd server
 go test ./...
