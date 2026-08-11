@@ -136,7 +136,7 @@ interface DiaryDao {
         FROM attachments AS attachment
         INNER JOIN diary_pages AS page ON page.id = attachment.pageId
         WHERE page.deletedAtEpochMillis IS NULL
-        ORDER BY page.diaryDate DESC, attachment.sortOrder, attachment.createdAtEpochMillis
+        ORDER BY page.diaryDate, attachment.sortOrder, attachment.createdAtEpochMillis
         """,
     )
     fun observeAllMedia(): Flow<List<MediaAttachmentRow>>

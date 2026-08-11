@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8
+
+- Show the Media timeline from oldest to newest so the photo story moves forward
+  naturally as you scroll down.
+- Keep the Today action useful by jumping to today's first photo, or the newest
+  available photo when today has none.
+
 ## 0.1.7
 
 - Add editable rich-text monthly recaps directly from each month in the continuous calendar.

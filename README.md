@@ -68,7 +68,7 @@ anything leaves the device.
 The **List** view keeps complete days in a calm chronological stream. The
 continuous **Month** view scrolls naturally through time, using photo previews
 when a day has them and a clear writing mark when it does not. **Media** is one
-unbroken, two-column wall sorted newest to oldest, with the day printed directly
+unbroken, two-column wall sorted oldest to newest, with the day printed directly
 on each image. **Search** finds words from the writing or the name of a place,
 and **Map** groups entries around the places where they happened.
 

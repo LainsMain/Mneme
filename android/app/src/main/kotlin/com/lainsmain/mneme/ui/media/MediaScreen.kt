@@ -53,7 +53,7 @@ fun MediaScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedId by remember { mutableStateOf<String?>(null) }
-    val orderedMedia = remember(media) { media.sortedByDescending { it.date } }
+    val orderedMedia = remember(media) { media.sortedBy { it.date } }
     val gridState = rememberLazyGridState()
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
     val monthFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMMM yyyy", locale) }
@@ -61,7 +61,9 @@ fun MediaScreen(
     LaunchedEffect(todayJumpKey) {
         if (todayJumpKey > 0 && orderedMedia.isNotEmpty()) {
             val today = LocalDate.now()
-            val target = orderedMedia.indexOfFirst { it.date == today }.takeIf { it >= 0 } ?: 0
+            val target = orderedMedia.indexOfFirst { it.date == today }
+                .takeIf { it >= 0 }
+                ?: orderedMedia.lastIndex
             gridState.animateScrollToItem(target)
         }
     }
