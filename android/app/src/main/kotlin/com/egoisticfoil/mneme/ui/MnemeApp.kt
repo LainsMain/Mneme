@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -250,13 +251,17 @@ fun MnemeApp(
                 onPreviousMonth = onPreviousRecapMonth,
                 onNextMonth = onNextRecapMonth,
                 onDocumentChange = onRecapDocumentChange,
-                modifier = Modifier.fillMaxSize().padding(contentPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding)
+                    .consumeWindowInsets(contentPadding),
             )
         } else AnimatedContent(
             targetState = Triple(showSettings, showSearch, destination),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .consumeWindowInsets(contentPadding),
             label = "journal destination",
         ) { (settingsVisible, searchVisible, target) ->
             if (settingsVisible) {
