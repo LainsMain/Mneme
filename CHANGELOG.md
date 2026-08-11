@@ -8,6 +8,9 @@
   pinned GitHub Actions while retaining the stable Android API 36 toolchain.
 - Publish the self-hosted server and deployment examples under the
   `lainsmain/mneme-server` Docker Hub namespace.
+- Move the Android application ID and source namespace to `com.lainsmain.mneme`.
+  This is a one-time breaking migration from builds through 0.1.8: back up the
+  old installation and retain its recovery code before installing the new app.
 
 ## 0.1.8
 

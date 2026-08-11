@@ -113,6 +113,11 @@ Mneme supports Android 8.0 and newer.
 2. Allow installation from your browser or file manager when Android asks.
 3. Open Mneme. Everything works locally; connecting a server is optional.
 
+> **Migration note:** builds through 0.1.8 used a legacy Android application ID.
+> Current builds use `com.lainsmain.mneme`, so Android installs them as a new
+> app. Before moving from 0.1.8, run a successful encrypted backup and save its
+> recovery code; then connect and restore from the newly installed app.
+
 Once installed, Mneme checks GitHub for releases when it opens. Updates download
 through Android's Download Manager with visible progress, are verified against
 the published SHA-256 digest, and then open Android's normal installer. A manual
