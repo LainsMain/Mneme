@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Re-lock the diary whenever Mneme leaves the foreground, including when the user returns to the Home screen.
+- Give written calendar days without photos their own clear, page-like preview treatment.
+- Add a production-ready root Docker Compose stack and attach it, with its environment template, to GitHub releases.
+
 ## 0.1.1
 
 - Upgrade `golang.org/x/crypto` to the patched 0.52.0 release.

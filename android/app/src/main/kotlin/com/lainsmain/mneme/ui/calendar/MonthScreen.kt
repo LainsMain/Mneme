@@ -12,14 +12,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -179,6 +177,7 @@ private fun DayCell(
             }
         }
     }
+    val writtenOnly = summary?.hasWriting == true && bitmap == null
     Surface(
         modifier = modifier
             .padding(bottom = 2.dp)
@@ -187,13 +186,25 @@ private fun DayCell(
             .clickable(onClick = onClick),
         shape = shape,
         color = when {
+            writtenOnly -> MaterialTheme.colorScheme.secondaryContainer
             selected -> MaterialTheme.colorScheme.primaryContainer
-            summary?.hasWriting == true -> MaterialTheme.colorScheme.secondaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainer
         },
         border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Box(Modifier.fillMaxSize()) {
+            if (writtenOnly) {
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.74f),
+                            ),
+                        ),
+                    ),
+                )
+            }
             bitmap?.let { loaded ->
                 Image(
                     bitmap = loaded.asImageBitmap(),
@@ -214,18 +225,53 @@ private fun DayCell(
             Text(
                 text = date.dayOfMonth.toString(),
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
-                color = if (bitmap != null) Color.White else MaterialTheme.colorScheme.onSurface,
+                color = when {
+                    bitmap != null -> Color.White
+                    writtenOnly -> MaterialTheme.colorScheme.onSecondaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )
-            if (summary?.hasWriting == true && bitmap == null) {
-                Icon(
-                    Icons.Rounded.Edit,
-                    contentDescription = null,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f),
+            if (writtenOnly) {
+                WrittenEntryPreview(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .fillMaxWidth()
+                        .height(17.dp),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun WrittenEntryPreview(modifier: Modifier = Modifier) {
+    val ink = MaterialTheme.colorScheme.onSecondaryContainer
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(5.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(0.86f)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(ink.copy(alpha = 0.72f)),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth(0.58f)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(ink.copy(alpha = 0.42f)),
+            )
         }
     }
 }

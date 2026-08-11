@@ -14,3 +14,4 @@ captures/
 # Local server state and deployment secrets
 server/data/
 deploy/.env
+/.env
