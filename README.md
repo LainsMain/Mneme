@@ -24,6 +24,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/LainsMain/Mneme/releases/download/v0.2.0/mneme-promo-1080p.mp4">
+    <img src="docs/promo/mneme-promo-poster.png" width="88%" alt="Watch the 39-second Mneme promo video">
+  </a><br>
+  <sub><a href="https://github.com/LainsMain/Mneme/releases/download/v0.2.0/mneme-promo-1080p.mp4">Watch Mneme in 39 seconds</a></sub>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/journal.png" width="31%" alt="A Mneme journal entry with formatted writing, a location, and two photos">
   <img src="docs/screenshots/month.png" width="31%" alt="Mneme's continuous photo calendar">
   <img src="docs/screenshots/media.png" width="31%" alt="Mneme's chronological media gallery">
