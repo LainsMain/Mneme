@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +89,7 @@ private enum class JournalDestination(val label: String) {
 @Composable
 fun MnemeApp(
     state: DiaryUiState,
+    journalOpenKey: Int,
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
     onToday: () -> Unit,
@@ -97,6 +99,8 @@ fun MnemeApp(
     onTakePhoto: () -> Unit,
     onMakePhotoPrimary: (String) -> Unit,
     onDeletePhoto: (String) -> Unit,
+    onSetPhotoCaption: (String, String) -> Unit,
+    onToggleFavorite: () -> Unit,
     onSetLocation: (String, Double?, Double?) -> Unit,
     onSetLocationFromMap: (Double, Double) -> Unit,
     onUsePhotoLocation: () -> Unit,
@@ -137,6 +141,13 @@ fun MnemeApp(
     var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
     var dismissedRecoveryReminder by rememberSaveable { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    LaunchedEffect(journalOpenKey) {
+        if (journalOpenKey > 0) {
+            destination = JournalDestination.Journal
+            showSettings = false
+            showSearch = false
+        }
+    }
     BackHandler(enabled = showSettings || showSearch || state.recapMonth != null) {
         when {
             showSettings -> showSettings = false
@@ -307,6 +318,8 @@ fun MnemeApp(
                     onTakePhoto = onTakePhoto,
                     onMakePhotoPrimary = onMakePhotoPrimary,
                     onDeletePhoto = onDeletePhoto,
+                    onSetPhotoCaption = onSetPhotoCaption,
+                    onToggleFavorite = onToggleFavorite,
                     onSetLocation = onSetLocation,
                     onSetLocationFromMap = onSetLocationFromMap,
                     onUsePhotoLocation = onUsePhotoLocation,
@@ -340,6 +353,7 @@ fun MnemeApp(
                     todayJumpKey = mediaTodayJumpKey,
                     onMakePrimary = onMakePhotoPrimary,
                     onDelete = onDeletePhoto,
+                    onSetCaption = onSetPhotoCaption,
                 )
 
                 JournalDestination.Map -> MapScreen(

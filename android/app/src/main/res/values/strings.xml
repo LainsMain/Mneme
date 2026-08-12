@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_today_description">Open today’s diary and see your writing progress.</string>
+    <string name="widget_favorite_description">Keep a favorite Mneme memory on your home screen.</string>
+    <string name="widget_write">WRITE</string>
+    <string name="widget_today_preview_date">Today in Mneme</string>
+    <string name="widget_today_preview_status">A blank page is waiting</string>
+    <string name="widget_favorite_preview_date">FAVORITE MEMORY</string>
+    <string name="widget_favorite_preview_title">Keep something close</string>
+    <string name="widget_favorite_preview_detail">Your favorite entries live here</string>
+</resources>

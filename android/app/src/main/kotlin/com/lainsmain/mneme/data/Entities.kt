@@ -22,6 +22,7 @@ data class DiaryPageEntity(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val locationIsManual: Boolean = false,
+    val isFavorite: Boolean = false,
 )
 
 @Entity(

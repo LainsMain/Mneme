@@ -1,6 +1,7 @@
 package com.lainsmain.mneme.ui.map
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.lainsmain.mneme.data.DaySummary
+import com.lainsmain.mneme.ui.FavoriteGold
 import com.lainsmain.mneme.ui.photo.rememberFileBitmap
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -337,8 +339,14 @@ private fun MapEntryResult(entry: DaySummary, onOpenDay: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .then(
+                if (entry.isFavorite) {
+                    Modifier.border(1.dp, FavoriteGold.copy(alpha = 0.78f), MaterialTheme.shapes.large)
+                } else Modifier
+            )
             .clickable(onClick = onOpenDay)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(

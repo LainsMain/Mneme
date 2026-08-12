@@ -90,7 +90,13 @@ interface DiaryDao {
                 SELECT attachment.longitude FROM attachments AS attachment
                 WHERE attachment.pageId = page.id ORDER BY attachment.sortOrder LIMIT 1
             )) AS longitude,
-            (SELECT COUNT(*) FROM attachments AS attachment WHERE attachment.pageId = page.id) AS attachmentCount
+            (SELECT COUNT(*) FROM attachments AS attachment WHERE attachment.pageId = page.id) AS attachmentCount,
+            page.isFavorite AS isFavorite,
+            COALESCE((
+                SELECT GROUP_CONCAT(attachment.caption, ' ')
+                FROM attachments AS attachment
+                WHERE attachment.pageId = page.id AND attachment.caption != ''
+            ), '') AS photoCaptions
         FROM diary_pages AS page
         WHERE page.deletedAtEpochMillis IS NULL
             AND page.diaryDate BETWEEN :firstDate AND :lastDate
@@ -122,7 +128,13 @@ interface DiaryDao {
                 SELECT attachment.longitude FROM attachments AS attachment
                 WHERE attachment.pageId = page.id ORDER BY attachment.sortOrder LIMIT 1
             )) AS longitude,
-            (SELECT COUNT(*) FROM attachments AS attachment WHERE attachment.pageId = page.id) AS attachmentCount
+            (SELECT COUNT(*) FROM attachments AS attachment WHERE attachment.pageId = page.id) AS attachmentCount,
+            page.isFavorite AS isFavorite,
+            COALESCE((
+                SELECT GROUP_CONCAT(attachment.caption, ' ')
+                FROM attachments AS attachment
+                WHERE attachment.pageId = page.id AND attachment.caption != ''
+            ), '') AS photoCaptions
         FROM diary_pages AS page
         WHERE page.deletedAtEpochMillis IS NULL
         ORDER BY page.diaryDate DESC
@@ -132,7 +144,7 @@ interface DiaryDao {
 
     @Query(
         """
-        SELECT attachment.*, page.diaryDate AS diaryDate
+        SELECT attachment.*, page.diaryDate AS diaryDate, page.isFavorite AS isFavorite
         FROM attachments AS attachment
         INNER JOIN diary_pages AS page ON page.id = attachment.pageId
         WHERE page.deletedAtEpochMillis IS NULL
@@ -202,6 +214,18 @@ interface DiaryDao {
     @Query("DELETE FROM attachments WHERE id = :attachmentId")
     suspend fun deleteAttachmentById(attachmentId: String)
 
+    @Query("UPDATE attachments SET caption = :caption WHERE id = :attachmentId")
+    suspend fun setAttachmentCaption(attachmentId: String, caption: String)
+
+    @Query(
+        """
+        UPDATE diary_pages SET isFavorite = :favorite,
+            updatedAtEpochMillis = :updatedAt, revision = revision + 1
+        WHERE id = :pageId
+        """,
+    )
+    suspend fun setFavorite(pageId: String, favorite: Boolean, updatedAt: Long)
+
     @Query(
         """
         UPDATE diary_pages SET locationName = :name, latitude = :latitude, longitude = :longitude,
@@ -244,11 +268,14 @@ data class MonthDayRow(
     val latitude: Double?,
     val longitude: Double?,
     val attachmentCount: Int,
+    val isFavorite: Boolean,
+    val photoCaptions: String,
 )
 
 data class MediaAttachmentRow(
     @Embedded val attachment: AttachmentEntity,
     val diaryDate: String,
+    val isFavorite: Boolean,
 )
 
 data class DiaryExportSnapshot(

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -71,6 +72,7 @@ fun FullScreenPhotoViewer(
     onDismiss: () -> Unit,
     onMakePrimary: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
+    onSetCaption: ((String, String) -> Unit)? = null,
 ) {
     if (attachments.isEmpty()) return
     var currentIndex by remember(initialAttachmentId, attachments.map { it.id }) {
@@ -80,6 +82,7 @@ fun FullScreenPhotoViewer(
     var showInfo by remember(attachment.id) { mutableStateOf(false) }
     var showActions by remember(attachment.id) { mutableStateOf(false) }
     var confirmDelete by remember(attachment.id) { mutableStateOf(false) }
+    var editCaption by remember(attachment.id) { mutableStateOf(false) }
     var scale by remember(attachment.id) { mutableFloatStateOf(1f) }
     var offset by remember(attachment.id) { mutableStateOf(Offset.Zero) }
     val bitmap by produceState<Bitmap?>(null, attachment.originalPath) {
@@ -134,12 +137,22 @@ fun FullScreenPhotoViewer(
                     IconButton(onClick = { showInfo = !showInfo }) {
                         Icon(Icons.Rounded.Info, contentDescription = "Photo information", tint = Color.White)
                     }
-                    if (onMakePrimary != null || onDelete != null) {
+                    if (onMakePrimary != null || onDelete != null || onSetCaption != null) {
                         Box {
                             IconButton(onClick = { showActions = true }) {
                                 Icon(Icons.Rounded.MoreVert, contentDescription = "Photo actions", tint = Color.White)
                             }
                             DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                                if (onSetCaption != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (attachment.caption.isBlank()) "Add caption" else "Edit caption") },
+                                        leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                                        onClick = {
+                                            showActions = false
+                                            editCaption = true
+                                        },
+                                    )
+                                }
                                 if (onMakePrimary != null) {
                                     DropdownMenuItem(
                                         text = { Text(if (currentIndex == 0) "Primary photo" else "Set as primary") },
@@ -177,6 +190,24 @@ fun FullScreenPhotoViewer(
                         .navigationBarsPadding()
                         .padding(12.dp),
                 )
+            }
+
+            AnimatedVisibility(
+                visible = !showInfo && attachment.caption.isNotBlank(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                Surface(
+                    modifier = Modifier.navigationBarsPadding().padding(20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = 0.66f),
+                ) {
+                    Text(
+                        attachment.caption,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
             }
 
             if (attachments.size > 1) {
@@ -218,6 +249,16 @@ fun FullScreenPhotoViewer(
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }
+    if (editCaption && onSetCaption != null) {
+        PhotoCaptionDialog(
+            initialCaption = attachment.caption,
+            onDismiss = { editCaption = false },
+            onSave = {
+                onSetCaption(attachment.id, it)
+                editCaption = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -237,6 +278,9 @@ private fun PhotoInformation(attachment: DiaryAttachment, modifier: Modifier = M
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
+            attachment.caption.takeIf(String::isNotBlank)?.let {
+                Text(it, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+            }
             attachment.capturedAtEpochMillis?.let { timestamp ->
                 Text(
                     text = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)

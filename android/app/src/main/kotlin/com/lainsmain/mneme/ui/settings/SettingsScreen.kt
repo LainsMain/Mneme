@@ -656,7 +656,8 @@ fun SettingsScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "It contains an HTML index, HTML and Markdown entries, original photos, and photo metadata. " +
+                    "It contains an HTML index, HTML and Markdown entries, original photos, photo metadata, " +
+                        "and a structured manifest for future tools and migrations. " +
                         "This export is not encrypted, so store it somewhere private.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

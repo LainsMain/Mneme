@@ -10,11 +10,58 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 data class DiaryExportResult(val entryCount: Int, val photoCount: Int, val recapCount: Int)
+
+@Serializable
+private data class PortableDiaryManifest(
+    val format: String = "mneme-portable-export-v2",
+    val createdAt: String,
+    val entries: List<PortableEntry>,
+    val photos: List<PortablePhoto>,
+    val monthlyRecaps: List<PortableRecap>,
+)
+
+@Serializable
+private data class PortableEntry(
+    val id: String,
+    val date: String,
+    val documentJson: String,
+    val plainText: String,
+    val favorite: Boolean,
+    val locationName: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val revision: Long,
+)
+
+@Serializable
+private data class PortablePhoto(
+    val id: String,
+    val entryId: String,
+    val mediaPath: String,
+    val metadataPath: String,
+    val caption: String,
+    val sortOrder: Int,
+    val sha256: String,
+)
+
+@Serializable
+private data class PortableRecap(
+    val id: String,
+    val yearMonth: String,
+    val documentJson: String,
+    val plainText: String,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val revision: Long,
+)
 
 class DiaryExportRepository(
     private val context: Context,
@@ -29,14 +76,18 @@ class DiaryExportRepository(
                 "Android could not open the chosen export file."
             }
             ZipOutputStream(output.buffered()).use { zip ->
+                val createdAt = Instant.now().toString()
                 zip.writeText(
                     "README.txt",
-                    "Mneme diary export\nCreated ${Instant.now()}\n\n" +
+                    "Mneme diary export\nCreated $createdAt\n\n" +
                         "Open index.html in a browser, or read the Markdown files in entries/ and recaps/. " +
-                        "Original photos and their metadata are in media/.\n",
+                        "Original photos and their metadata are in media/. manifest.json contains a complete " +
+                        "machine-readable index for future tools and migrations. This archive is not encrypted.\n",
                 )
                 val indexRows = snapshot.pages.sortedByDescending(DiaryPageEntity::diaryDate).joinToString("\n") { page ->
-                    "<li><a href=\"entries/${page.diaryDate}.html\">${page.diaryDate}</a>" +
+                    "<li class=\"${if (page.isFavorite) "favorite" else ""}\">" +
+                        "${if (page.isFavorite) "<span title=\"Favorite\">★</span> " else ""}" +
+                        "<a href=\"entries/${page.diaryDate}.html\">${page.diaryDate}</a>" +
                         " — ${escapeHtml(page.plainText.take(120))}</li>"
                 }
                 val recapRows = snapshot.recaps.sortedByDescending(MonthlyRecapEntity::yearMonth).joinToString("\n") {
@@ -47,23 +98,48 @@ class DiaryExportRepository(
                     htmlPage("Mneme diary", "<h1>Mneme diary</h1><h2>Entries</h2><ul>$indexRows</ul>" +
                         "<h2>Monthly recaps</h2><ul>$recapRows</ul>"),
                 )
+                zip.writeText("manifest.json", portableManifest(snapshot, createdAt))
                 snapshot.pages.forEach { page ->
                     val document = decode(page.documentJson, page.plainText)
                     val photoLinks = photosByPage[page.id].orEmpty().joinToString("\n") { photo ->
                         val fileName = photoExportName(photo)
                         "<figure><a href=\"../media/$fileName\"><img src=\"../media/$fileName\"></a>" +
-                            "<figcaption>${escapeHtml(photo.caption)}</figcaption></figure>"
+                            photo.caption.takeIf(String::isNotBlank)
+                                ?.let { "<figcaption>${escapeHtml(it)}</figcaption>" }
+                                .orEmpty() + "</figure>"
                     }
-                    val location = page.locationName?.let { "<p class=\"meta\">📍 ${escapeHtml(it)}</p>" }.orEmpty()
+                    val coordinates = if (page.latitude != null && page.longitude != null) {
+                        " <span>(${page.latitude}, ${page.longitude})</span>"
+                    } else ""
+                    val location = page.locationName
+                        ?.let { "<p class=\"meta\">📍 ${escapeHtml(it)}$coordinates</p>" }
+                        .orEmpty()
+                    val favorite = if (page.isFavorite) "<p class=\"favorite\">★ Favorite</p>" else ""
                     zip.writeText(
                         "entries/${page.diaryDate}.html",
-                        htmlPage(page.diaryDate, "<h1>${page.diaryDate}</h1>$location<div class=\"writing\">" +
+                        htmlPage(page.diaryDate, "<h1>${page.diaryDate}</h1>$favorite$location<div class=\"writing\">" +
                             renderHtml(document) + "</div><div class=\"photos\">$photoLinks</div>"),
                     )
+                    val photoMarkdown = photosByPage[page.id].orEmpty().joinToString("\n\n") { photo ->
+                        val fileName = photoExportName(photo)
+                        val caption = photo.caption.ifBlank { photo.originalFileName ?: "Photo" }
+                        "![${escapeMarkdown(caption)}](../media/$fileName)" +
+                            photo.caption.takeIf(String::isNotBlank)?.let { "\n\n_${escapeMarkdown(it)}_" }.orEmpty()
+                    }
+                    val favoriteMarkdown = if (page.isFavorite) "★ Favorite\n\n" else ""
+                    val locationMarkdown = page.locationName?.let {
+                        val coordinateText = if (page.latitude != null && page.longitude != null) {
+                            " (${page.latitude}, ${page.longitude})"
+                        } else ""
+                        "Location: $it$coordinateText\n\n"
+                    }.orEmpty()
+                    val photosMarkdown = if (photoMarkdown.isNotBlank()) {
+                        "\n\n## Photos\n\n$photoMarkdown\n"
+                    } else "\n"
                     zip.writeText(
                         "entries/${page.diaryDate}.md",
-                        "# ${page.diaryDate}\n\n" +
-                            page.locationName?.let { "Location: $it\n\n" }.orEmpty() + renderMarkdown(document) + "\n",
+                        "# ${page.diaryDate}\n\n$favoriteMarkdown$locationMarkdown" +
+                            renderMarkdown(document) + photosMarkdown,
                     )
                 }
                 snapshot.recaps.forEach { recap ->
@@ -154,17 +230,65 @@ class DiaryExportRepository(
         put("normalizedExif", photo.normalizedExifJson)
     }.let(json::encodeToString)
 
+    private fun portableManifest(snapshot: DiaryExportSnapshot, createdAt: String): String =
+        json.encodeToString(
+            PortableDiaryManifest(
+                createdAt = createdAt,
+                entries = snapshot.pages.map { page ->
+                    PortableEntry(
+                        id = page.id,
+                        date = page.diaryDate,
+                        documentJson = page.documentJson,
+                        plainText = page.plainText,
+                        favorite = page.isFavorite,
+                        locationName = page.locationName,
+                        latitude = page.latitude,
+                        longitude = page.longitude,
+                        createdAtEpochMillis = page.createdAtEpochMillis,
+                        updatedAtEpochMillis = page.updatedAtEpochMillis,
+                        revision = page.revision,
+                    )
+                },
+                photos = snapshot.attachments.map { photo ->
+                    val fileName = photoExportName(photo)
+                    PortablePhoto(
+                        id = photo.id,
+                        entryId = photo.pageId,
+                        mediaPath = "media/$fileName",
+                        metadataPath = "media/$fileName.metadata.json",
+                        caption = photo.caption,
+                        sortOrder = photo.sortOrder,
+                        sha256 = photo.sha256,
+                    )
+                },
+                monthlyRecaps = snapshot.recaps.map { recap ->
+                    PortableRecap(
+                        id = recap.id,
+                        yearMonth = recap.yearMonth,
+                        documentJson = recap.documentJson,
+                        plainText = recap.plainText,
+                        createdAtEpochMillis = recap.createdAtEpochMillis,
+                        updatedAtEpochMillis = recap.updatedAtEpochMillis,
+                        revision = recap.revision,
+                    )
+                },
+            ),
+        )
+
     private fun htmlPage(title: String, body: String) = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>${escapeHtml(title)}</title><style>
 body{max-width:760px;margin:40px auto;padding:0 20px;font:17px/1.65 system-ui;color:#242128;background:#faf8fc}
 a{color:#6750a4}.meta{color:#68636d}.writing{white-space:normal}.heading{font-size:1.35em;font-weight:700}
+.favorite{color:#9a6b12}
 .photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:24px}figure{margin:0}img{width:100%;height:auto;border-radius:14px}figcaption{font-size:.85em;color:#68636d}
 </style></head><body>$body</body></html>"""
 
     private fun escapeHtml(value: String): String = value
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&#39;")
+
+    private fun escapeMarkdown(value: String): String = value.replace("[", "\\[").replace("]", "\\]")
 
     private fun ZipOutputStream.writeText(path: String, value: String) {
         putNextEntry(ZipEntry(path))

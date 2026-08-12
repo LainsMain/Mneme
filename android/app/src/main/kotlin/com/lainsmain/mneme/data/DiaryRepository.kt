@@ -9,6 +9,7 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.exifinterface.media.ExifInterface
 import com.lainsmain.mneme.model.RichTextDocument
+import com.lainsmain.mneme.widget.MnemeWidgetUpdater
 import java.io.File
 import java.io.FileOutputStream
 import java.security.DigestOutputStream
@@ -39,6 +40,7 @@ data class DiaryPage(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val locationIsManual: Boolean = false,
+    val isFavorite: Boolean = false,
 )
 
 data class DaySummary(
@@ -51,9 +53,15 @@ data class DaySummary(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val attachmentCount: Int = 0,
+    val isFavorite: Boolean = false,
+    val photoCaptions: String = "",
 )
 
-data class DatedAttachment(val date: LocalDate, val attachment: DiaryAttachment)
+data class DatedAttachment(
+    val date: LocalDate,
+    val attachment: DiaryAttachment,
+    val isFavorite: Boolean = false,
+)
 
 data class DiaryAttachment(
     val id: String,
@@ -118,6 +126,8 @@ class DiaryRepository(
                     latitude = row.latitude,
                     longitude = row.longitude,
                     attachmentCount = row.attachmentCount,
+                    isFavorite = row.isFavorite,
+                    photoCaptions = row.photoCaptions,
                 )
             }
         }
@@ -135,12 +145,20 @@ class DiaryRepository(
                 latitude = row.latitude,
                 longitude = row.longitude,
                 attachmentCount = row.attachmentCount,
+                isFavorite = row.isFavorite,
+                photoCaptions = row.photoCaptions,
             )
         }
     }
 
     fun observeAllMedia(): Flow<List<DatedAttachment>> = diaryDao.observeAllMedia().map { rows ->
-        rows.map { DatedAttachment(LocalDate.parse(it.diaryDate), it.attachment.toModel()) }
+        rows.map {
+            DatedAttachment(
+                date = LocalDate.parse(it.diaryDate),
+                attachment = it.attachment.toModel(),
+                isFavorite = it.isFavorite,
+            )
+        }
     }
 
     fun observeAttachments(date: LocalDate): Flow<List<DiaryAttachment>> =
@@ -223,6 +241,7 @@ class DiaryRepository(
             if (result.isSuccess) imported++ else failed++
         }
         if (imported > 0) BackupWorker.scheduleSoon(context)
+        if (imported > 0) MnemeWidgetUpdater.requestUpdate(context)
         PhotoImportResult(imported = imported, failed = failed)
     }
 
@@ -240,9 +259,11 @@ class DiaryRepository(
             latitude = existing?.latitude,
             longitude = existing?.longitude,
             locationIsManual = existing?.locationIsManual ?: false,
+            isFavorite = existing?.isFavorite ?: false,
         )
         diaryDao.upsertPage(page)
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
         return page.toModel()
     }
 
@@ -269,6 +290,7 @@ class DiaryRepository(
     suspend fun makePhotoPrimary(attachmentId: String) = withContext(Dispatchers.IO) {
         diaryDao.makeAttachmentPrimary(attachmentId)
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
     }
 
     suspend fun deletePhoto(attachmentId: String) = withContext(Dispatchers.IO) {
@@ -277,6 +299,19 @@ class DiaryRepository(
         File(attachment.encryptedFileName).delete()
         attachment.thumbnailFileName?.let { File(it).delete() }
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
+    }
+
+    suspend fun setPhotoCaption(attachmentId: String, caption: String) = withContext(Dispatchers.IO) {
+        diaryDao.setAttachmentCaption(attachmentId, caption.trim())
+        BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
+    }
+
+    suspend fun setFavorite(pageId: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+        diaryDao.setFavorite(pageId, favorite, clock.millis())
+        BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
     }
 
     suspend fun setManualLocation(
@@ -287,16 +322,19 @@ class DiaryRepository(
     ) = withContext(Dispatchers.IO) {
         diaryDao.setManualLocation(pageId, name, latitude, longitude, clock.millis())
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
     }
 
     suspend fun setAutomaticLocationName(pageId: String, name: String?) = withContext(Dispatchers.IO) {
         diaryDao.setAutomaticLocationName(pageId, name, clock.millis())
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
     }
 
     suspend fun usePrimaryPhotoLocation(pageId: String) = withContext(Dispatchers.IO) {
         diaryDao.clearManualLocation(pageId, clock.millis())
         BackupWorker.scheduleSoon(context)
+        MnemeWidgetUpdater.requestUpdate(context)
     }
 
     private fun DiaryPageEntity.toModel() = DiaryPage(
@@ -310,6 +348,7 @@ class DiaryRepository(
         latitude = latitude,
         longitude = longitude,
         locationIsManual = locationIsManual,
+        isFavorite = isFavorite,
     )
 
     private fun AttachmentEntity.toModel() = DiaryAttachment(

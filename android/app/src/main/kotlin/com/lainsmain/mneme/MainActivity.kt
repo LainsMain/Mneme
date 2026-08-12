@@ -4,6 +4,7 @@ import android.content.DialogInterface
 import android.Manifest
 import android.hardware.biometrics.BiometricPrompt
 import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
 import android.os.Build
 import android.os.CancellationSignal
@@ -21,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,10 +39,19 @@ import com.lainsmain.mneme.ui.settings.SettingsViewModel
 import com.lainsmain.mneme.ui.settings.AppLockScreen
 import com.lainsmain.mneme.ui.theme.MnemeTheme
 import java.io.File
+import java.time.LocalDate
+import com.lainsmain.mneme.widget.ACTION_OPEN_DIARY_DATE
+import com.lainsmain.mneme.widget.EXTRA_DIARY_DATE
+import com.lainsmain.mneme.widget.MnemeWidgetUpdater
 
 class MainActivity : ComponentActivity() {
+    private var requestedWidgetDate by mutableStateOf<LocalDate?>(null)
+    private var widgetOpenKey by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedWidgetDate = intent.widgetDate()
+        if (requestedWidgetDate != null) widgetOpenKey++
         enableEdgeToEdge()
         setContent {
             val application = application as MnemeApplication
@@ -76,6 +87,12 @@ class MainActivity : ComponentActivity() {
                     factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
                 )
                 val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(requestedWidgetDate) {
+                    requestedWidgetDate?.let(diaryViewModel::selectDate)
+                }
+                LaunchedEffect(settingsState.settings.appLockEnabled) {
+                    MnemeWidgetUpdater.requestUpdate(application)
+                }
                 LaunchedEffect(settingsState.settings.yesterdayPromptCutoffHour) {
                     diaryViewModel.updateYesterdayPromptCutoffHour(
                         settingsState.settings.yesterdayPromptCutoffHour,
@@ -131,6 +148,7 @@ class MainActivity : ComponentActivity() {
                 }
                 MnemeApp(
                     state = state,
+                    journalOpenKey = widgetOpenKey,
                     onPreviousDay = diaryViewModel::previousDay,
                     onNextDay = diaryViewModel::nextDay,
                     onToday = diaryViewModel::today,
@@ -149,6 +167,8 @@ class MainActivity : ComponentActivity() {
                     },
                     onMakePhotoPrimary = diaryViewModel::makePhotoPrimary,
                     onDeletePhoto = diaryViewModel::deletePhoto,
+                    onSetPhotoCaption = diaryViewModel::setPhotoCaption,
+                    onToggleFavorite = diaryViewModel::toggleFavorite,
                     onSetLocation = diaryViewModel::setLocation,
                     onSetLocationFromMap = diaryViewModel::setLocationFromMap,
                     onUsePhotoLocation = diaryViewModel::usePrimaryPhotoLocation,
@@ -187,6 +207,18 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedWidgetDate = intent.widgetDate()
+        if (requestedWidgetDate != null) widgetOpenKey++
+    }
+
+    private fun Intent.widgetDate(): LocalDate? =
+        takeIf { action == ACTION_OPEN_DIARY_DATE }
+            ?.getStringExtra(EXTRA_DIARY_DATE)
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 
     private fun showBiometricPrompt(onSuccess: () -> Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
