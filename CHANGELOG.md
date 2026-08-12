@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Keep the rich-text formatting bar above the complete Android keyboard,
   including suggestion rows and navigation controls, across keyboard layouts.
