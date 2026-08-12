@@ -10,6 +10,7 @@ import com.lainsmain.mneme.data.BackupWorker
 import com.lainsmain.mneme.data.UpdateRepository
 import com.lainsmain.mneme.data.DiaryExportRepository
 import org.maplibre.android.MapLibre
+import com.lainsmain.mneme.widget.MnemeWidgetUpdater
 
 class MnemeApplication : Application() {
     val database by lazy { MnemeDatabase.create(this) }
@@ -24,5 +25,6 @@ class MnemeApplication : Application() {
         super.onCreate()
         MapLibre.getInstance(this)
         if (settingsRepository.settings.value.serverConnected) BackupWorker.schedule(this)
+        MnemeWidgetUpdater.requestUpdate(this)
     }
 }

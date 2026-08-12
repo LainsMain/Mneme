@@ -67,13 +67,20 @@ anything leaves the device.
 
 The **List** view keeps complete days in a calm chronological stream. The
 continuous **Month** view scrolls naturally through time, using photo previews
-when a day has them and a clear writing mark when it does not. **Media** is one
+when a day has them and a clear writing mark when it does not. Favorite days
+carry a restrained gold outline everywhere they appear. **Media** is one
 unbroken, two-column wall sorted oldest to newest, with the day printed directly
-on each image. **Search** finds words from the writing or the name of a place,
-and **Map** groups entries around the places where they happened.
+on each image. Photos can carry optional captions. **Search** finds words from
+writing, captions, or place names, with compact filters for photos, places,
+favorites, and date ranges. **Map** groups entries around the places where they
+happened.
 
 The Today action returns every timeline to the present without losing the date
 you were editing.
+
+Mneme also provides two privacy-aware home-screen widgets: a fast **Write
+today** card and a richer **Favorite memory** card. When app lock is enabled,
+the widgets hide journal content and open Mneme through the normal unlock flow.
 
 ## Private by design
 
@@ -86,7 +93,7 @@ you were editing.
         <li>Immediate relock when Mneme leaves the foreground</li>
         <li>AES-256-GCM encryption before self-hosted backup</li>
         <li>Portable recovery code for restoring on a new phone</li>
-        <li>Readable HTML, Markdown, photo, and metadata ZIP export</li>
+        <li>Readable HTML, Markdown, original-photo, metadata, and structured-manifest ZIP export</li>
         <li>No Google Maps key, account, analytics SDK, or ad SDK</li>
       </ul>
     </td>

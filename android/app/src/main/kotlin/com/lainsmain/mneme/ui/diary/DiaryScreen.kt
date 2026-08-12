@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.AssistChip
@@ -60,6 +62,7 @@ import com.lainsmain.mneme.model.RichTextDocument
 import com.lainsmain.mneme.ui.editor.RichTextEditor
 import com.lainsmain.mneme.ui.editor.RichTextFormattingBar
 import com.lainsmain.mneme.ui.editor.rememberRichTextEditorState
+import com.lainsmain.mneme.ui.FavoriteGold
 import com.lainsmain.mneme.ui.map.LocationPickerDialog
 import com.lainsmain.mneme.ui.photo.FullScreenPhotoViewer
 import com.lainsmain.mneme.ui.photo.PhotoMosaic
@@ -77,6 +80,8 @@ fun DiaryScreen(
     onTakePhoto: () -> Unit,
     onMakePhotoPrimary: (String) -> Unit,
     onDeletePhoto: (String) -> Unit,
+    onSetPhotoCaption: (String, String) -> Unit,
+    onToggleFavorite: () -> Unit,
     onSetLocation: (String, Double?, Double?) -> Unit,
     onSetLocationFromMap: (Double, Double) -> Unit,
     onUsePhotoLocation: () -> Unit,
@@ -108,6 +113,8 @@ fun DiaryScreen(
                 onChooseFromGallery = onChoosePhotos,
                 onTakePhoto = onTakePhoto,
                 onEditLocation = { showLocationDialog = true },
+                isFavorite = state.isFavorite,
+                onToggleFavorite = onToggleFavorite,
             )
 
             state.yesterdaySuggestion
@@ -146,6 +153,7 @@ fun DiaryScreen(
                     onOpen = { selectedPhoto = it },
                     onMakePrimary = onMakePhotoPrimary,
                     onDelete = onDeletePhoto,
+                    onSetCaption = onSetPhotoCaption,
                     modifier = Modifier.padding(top = 20.dp),
                 )
             }
@@ -188,6 +196,7 @@ fun DiaryScreen(
             onDismiss = { selectedPhoto = null },
             onMakePrimary = onMakePhotoPrimary,
             onDelete = onDeletePhoto,
+            onSetCaption = onSetPhotoCaption,
         )
     }
     if (showLocationDialog) {
@@ -249,62 +258,74 @@ private fun EntryDateHeader(
     onChooseFromGallery: () -> Unit,
     onTakePhoto: () -> Unit,
     onEditLocation: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
 ) {
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
-    Row(
+    Surface(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.background,
+        border = if (isFavorite) BorderStroke(1.dp, FavoriteGold.copy(alpha = 0.78f)) else null,
     ) {
-        Surface(
-            onClick = onPreviousDay,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Previous day")
+            Surface(
+                onClick = onPreviousDay,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Previous day")
+                }
             }
-        }
-        AnimatedContent(
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-            targetState = date,
-            label = "entry date",
-        ) { targetDate ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = targetDate.format(DateTimeFormatter.ofPattern("EEEE", locale)).uppercase(locale),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = MaterialTheme.typography.labelMedium.letterSpacing * 1.15f,
-                    maxLines = 1,
-                )
-                Text(
-                    text = targetDate.format(DateTimeFormatter.ofPattern("d MMMM", locale)),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-                Text(
-                    text = "${targetDate.year}  ·  ${if (isSaving) "Saving…" else "Saved"}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            AnimatedContent(
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                targetState = date,
+                label = "entry date",
+            ) { targetDate ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = targetDate.format(DateTimeFormatter.ofPattern("EEEE", locale)).uppercase(locale),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isFavorite) FavoriteGold else MaterialTheme.colorScheme.primary,
+                        letterSpacing = MaterialTheme.typography.labelMedium.letterSpacing * 1.15f,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = targetDate.format(DateTimeFormatter.ofPattern("d MMMM", locale)),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = "${targetDate.year}  ·  ${if (isSaving) "Saving…" else "Saved"}" +
+                            if (isFavorite) "  ·  Favorite" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isFavorite) FavoriteGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-        }
-        Surface(
-            onClick = onNextDay,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Next day")
+            Surface(
+                onClick = onNextDay,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Next day")
+                }
             }
+            EntryOverflowMenu(
+                onChooseFromGallery = onChooseFromGallery,
+                onTakePhoto = onTakePhoto,
+                onEditLocation = onEditLocation,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+            )
         }
-        EntryOverflowMenu(
-            onChooseFromGallery = onChooseFromGallery,
-            onTakePhoto = onTakePhoto,
-            onEditLocation = onEditLocation,
-        )
     }
 }
 
@@ -346,6 +367,8 @@ private fun EntryOverflowMenu(
     onChooseFromGallery: () -> Unit,
     onTakePhoto: () -> Unit,
     onEditLocation: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -353,6 +376,20 @@ private fun EntryOverflowMenu(
             Icon(Icons.Rounded.MoreVert, contentDescription = "Entry actions")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(if (isFavorite) "Remove from favorites" else "Add to favorites") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = if (isFavorite) FavoriteGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onToggleFavorite()
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Choose from gallery") },
                 leadingIcon = { Icon(Icons.Rounded.PhotoLibrary, contentDescription = null) },

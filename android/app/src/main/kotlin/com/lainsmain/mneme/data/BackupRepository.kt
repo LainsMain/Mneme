@@ -1,5 +1,7 @@
 package com.lainsmain.mneme.data
 
+import com.lainsmain.mneme.widget.MnemeWidgetUpdater
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -129,6 +131,7 @@ class BackupRepository(
                         latitude = page.latitude,
                         longitude = page.longitude,
                         locationIsManual = page.locationIsManual,
+                        isFavorite = page.isFavorite,
                     )
                 }
                 val attachmentDirectory = File(context.filesDir, "attachments").apply { mkdirs() }
@@ -200,6 +203,7 @@ class BackupRepository(
                 }
                 recoveryKeyManager.importRecoveryCode(recoveryCode)
                 diaryDao.restoreBackup(pages, attachments, recaps)
+                MnemeWidgetUpdater.requestUpdate(context)
                 objectCache().edit().clear().apply()
                 RestoreResult(pages.size, attachments.size, recaps.size)
             } catch (error: Exception) {
@@ -316,6 +320,7 @@ class BackupRepository(
                 latitude = page.latitude,
                 longitude = page.longitude,
                 locationIsManual = page.locationIsManual,
+                isFavorite = page.isFavorite,
             )
         },
         attachments = attachments.mapNotNull { attachment ->

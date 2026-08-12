@@ -3,6 +3,7 @@ package com.lainsmain.mneme.ui.media
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,9 +39,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.lainsmain.mneme.data.DatedAttachment
 import com.lainsmain.mneme.ui.photo.FullScreenPhotoViewer
 import com.lainsmain.mneme.ui.photo.rememberFileBitmap
+import com.lainsmain.mneme.ui.FavoriteGold
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -50,6 +53,7 @@ fun MediaScreen(
     todayJumpKey: Int,
     onMakePrimary: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onSetCaption: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -109,6 +113,12 @@ fun MediaScreen(
                 Box(
                     modifier = Modifier
                         .aspectRatio(1f)
+                        .then(
+                            if (item.isFavorite) {
+                                Modifier.border(1.5.dp, FavoriteGold.copy(alpha = 0.86f), RoundedCornerShape(6.dp))
+                                    .padding(3.dp)
+                            } else Modifier
+                        )
                         .background(MaterialTheme.colorScheme.surfaceContainer)
                         .clickable { selectedId = item.attachment.id },
                 ) {
@@ -167,6 +177,7 @@ fun MediaScreen(
             onDismiss = { selectedId = null },
             onMakePrimary = onMakePrimary,
             onDelete = onDelete,
+            onSetCaption = onSetCaption,
         )
     }
 }

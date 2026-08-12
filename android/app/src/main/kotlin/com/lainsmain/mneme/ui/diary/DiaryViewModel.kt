@@ -34,6 +34,7 @@ data class DiaryUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedRevision: Long = 0,
+    val isFavorite: Boolean = false,
     val yesterdaySuggestion: LocalDate? = null,
     val visibleMonth: YearMonth,
     val monthDays: Map<LocalDate, DaySummary> = emptyMap(),
@@ -229,6 +230,20 @@ class DiaryViewModel(
         viewModelScope.launch { repository.deletePhoto(attachmentId) }
     }
 
+    fun setPhotoCaption(attachmentId: String, caption: String) {
+        viewModelScope.launch { repository.setPhotoCaption(attachmentId, caption) }
+    }
+
+    fun toggleFavorite() {
+        viewModelScope.launch {
+            val page = pageForMetadata()
+            val favorite = !_uiState.value.isFavorite
+            _uiState.value = _uiState.value.copy(isFavorite = favorite)
+            repository.setFavorite(page.id, favorite)
+            currentPage = page.copy(isFavorite = favorite)
+        }
+    }
+
     fun setLocation(name: String, latitude: Double?, longitude: Double?) {
         viewModelScope.launch {
             val resolvedName = name.trim().ifBlank {
@@ -242,7 +257,7 @@ class DiaryViewModel(
                     "Custom location"
                 }
             }
-            val page = pageForLocation()
+            val page = pageForMetadata()
             repository.setManualLocation(page.id, resolvedName, latitude, longitude)
         }
     }
@@ -308,6 +323,7 @@ class DiaryViewModel(
             isLoading = true,
             isSaving = false,
             savedRevision = 0,
+            isFavorite = false,
             attachments = emptyList(),
             photoImportFailures = 0,
         )
@@ -320,6 +336,7 @@ class DiaryViewModel(
                         isLoading = false,
                         isSaving = false,
                         savedRevision = page?.revision ?: 0,
+                        isFavorite = page?.isFavorite ?: false,
                         location = effectiveLocation(page, _uiState.value.attachments),
                     )
                 }
@@ -481,7 +498,7 @@ class DiaryViewModel(
         }
     }
 
-    private suspend fun pageForLocation(): DiaryPage {
+    private suspend fun pageForMetadata(): DiaryPage {
         saveImmediately()
         return currentPage ?: repository.save(
             date = _uiState.value.selectedDate,

@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -26,6 +27,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +56,7 @@ fun PhotoMosaic(
     onOpen: (DiaryAttachment) -> Unit,
     onMakePrimary: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onSetCaption: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (attachments.isEmpty()) return
@@ -65,25 +68,26 @@ fun PhotoMosaic(
             isPrimary = true,
             onMakePrimary = onMakePrimary,
             onDelete = onDelete,
+            onSetCaption = onSetCaption,
             modifier = modifier
                 .fillMaxWidth()
                 .height(260.dp),
         )
 
         2 -> Row(modifier.fillMaxWidth().height(235.dp)) {
-            PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1f), true, onMakePrimary, onDelete)
+            PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1f), true, onMakePrimary, onDelete, onSetCaption)
             Box(Modifier.width(gap))
-            PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete)
+            PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete, onSetCaption)
         }
 
         3 -> Row(modifier.fillMaxWidth().height(285.dp)) {
-            PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1.35f), true, onMakePrimary, onDelete)
+            PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1.35f), true, onMakePrimary, onDelete, onSetCaption)
             Column(
                 modifier = Modifier
                     .weight(0.95f)
                     .padding(start = gap),
             ) {
-                PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete)
+                PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete, onSetCaption)
                 PhotoTile(
                     attachments[2],
                     { onOpen(attachments[2]) },
@@ -93,13 +97,14 @@ fun PhotoMosaic(
                     false,
                     onMakePrimary,
                     onDelete,
+                    onSetCaption,
                 )
             }
         }
 
         else -> Row(modifier.fillMaxWidth().height(300.dp)) {
             Column(Modifier.weight(1f)) {
-                PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1f), true, onMakePrimary, onDelete)
+                PhotoTile(attachments[0], { onOpen(attachments[0]) }, Modifier.weight(1f), true, onMakePrimary, onDelete, onSetCaption)
                 PhotoTile(
                     attachments[2],
                     { onOpen(attachments[2]) },
@@ -109,6 +114,7 @@ fun PhotoMosaic(
                     false,
                     onMakePrimary,
                     onDelete,
+                    onSetCaption,
                 )
             }
             Column(
@@ -116,13 +122,14 @@ fun PhotoMosaic(
                     .weight(1f)
                     .padding(start = gap),
             ) {
-                PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete)
+                PhotoTile(attachments[1], { onOpen(attachments[1]) }, Modifier.weight(1f), false, onMakePrimary, onDelete, onSetCaption)
                 PhotoTile(
                     attachment = attachments[3],
                     onClick = { onOpen(attachments[3]) },
                     isPrimary = false,
                     onMakePrimary = onMakePrimary,
                     onDelete = onDelete,
+                    onSetCaption = onSetCaption,
                     modifier = Modifier
                         .weight(1f)
                         .padding(top = gap),
@@ -141,11 +148,13 @@ private fun PhotoTile(
     isPrimary: Boolean,
     onMakePrimary: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onSetCaption: (String, String) -> Unit,
     overflowCount: Int = 0,
 ) {
     val bitmap by rememberFileBitmap(attachment.thumbnailPath ?: attachment.originalPath)
     var menuExpanded by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var editCaption by remember { mutableStateOf(false) }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -175,6 +184,21 @@ private fun PhotoTile(
                 )
             }
         }
+        if (attachment.caption.isNotBlank() && overflowCount == 0) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = Color.Black.copy(alpha = 0.62f),
+            ) {
+                Text(
+                    attachment.caption,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                )
+            }
+        }
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -200,6 +224,14 @@ private fun PhotoTile(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
             ) {
+                DropdownMenuItem(
+                    text = { Text(if (attachment.caption.isBlank()) "Add caption" else "Edit caption") },
+                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        editCaption = true
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text(if (isPrimary) "Primary photo" else "Set as primary") },
                     leadingIcon = { Icon(Icons.Rounded.Star, contentDescription = null) },
@@ -239,6 +271,49 @@ private fun PhotoTile(
             },
         )
     }
+    if (editCaption) {
+        PhotoCaptionDialog(
+            initialCaption = attachment.caption,
+            onDismiss = { editCaption = false },
+            onSave = {
+                onSetCaption(attachment.id, it)
+                editCaption = false
+            },
+        )
+    }
+}
+
+@Composable
+fun PhotoCaptionDialog(
+    initialCaption: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var caption by remember(initialCaption) { mutableStateOf(initialCaption) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initialCaption.isBlank()) "Add a photo caption" else "Edit photo caption") },
+        text = {
+            OutlinedTextField(
+                value = caption,
+                onValueChange = { if (it.length <= 240) caption = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("What made this moment worth keeping?") },
+                supportingText = { Text("${caption.length}/240") },
+                minLines = 2,
+                maxLines = 4,
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(caption.trim()) }) { Text("Save") } },
+        dismissButton = {
+            Row {
+                if (initialCaption.isNotBlank()) {
+                    TextButton(onClick = { onSave("") }) { Text("Remove") }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 @Composable

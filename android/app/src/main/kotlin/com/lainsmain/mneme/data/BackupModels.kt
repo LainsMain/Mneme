@@ -27,6 +27,7 @@ data class VaultPage(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val locationIsManual: Boolean = false,
+    val isFavorite: Boolean = false,
 )
 
 @Serializable

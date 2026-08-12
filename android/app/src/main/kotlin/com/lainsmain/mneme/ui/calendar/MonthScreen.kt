@@ -18,6 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import com.lainsmain.mneme.data.DaySummary
+import com.lainsmain.mneme.ui.FavoriteGold
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -203,7 +207,11 @@ private fun DayCell(
             selected -> MaterialTheme.colorScheme.primaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainer
         },
-        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        border = when {
+            selected -> androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            summary?.isFavorite == true -> androidx.compose.foundation.BorderStroke(1.5.dp, FavoriteGold)
+            else -> null
+        },
     ) {
         Box(Modifier.fillMaxSize()) {
             if (writtenOnly) {
@@ -246,6 +254,14 @@ private fun DayCell(
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )
+            if (summary?.isFavorite == true) {
+                Icon(
+                    Icons.Rounded.Star,
+                    contentDescription = "Favorite entry",
+                    tint = FavoriteGold,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).height(14.dp),
+                )
+            }
             if (writtenOnly) {
                 WrittenEntryPreview(
                     modifier = Modifier
