@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -89,7 +90,18 @@ fun MapScreen(
     var results by remember { mutableStateOf<List<DaySummary>?>(null) }
     var resultsTitle by remember { mutableStateOf("Entries in this area") }
     var hasCenteredOnEntries by remember { mutableStateOf(false) }
+    var deviceTarget by remember { mutableStateOf<LatLng?>(null) }
+    var locationMessage by remember { mutableStateOf<String?>(null) }
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.35f
+    val requestDeviceLocation = rememberDeviceLocationRequest(
+        onLocation = { location ->
+            locationMessage = null
+            deviceTarget = LatLng(location.latitude, location.longitude)
+        },
+        onUnavailable = {
+            locationMessage = "Location unavailable—check permission and device location settings."
+        },
+    )
 
     DisposableEffect(mapView, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -119,6 +131,8 @@ fun MapScreen(
                 isTiltGesturesEnabled = true
                 isLogoEnabled = true
                 isAttributionEnabled = true
+                val density = context.resources.displayMetrics.density
+                setCompassMargins(0, (70 * density).toInt(), (12 * density).toInt(), 0)
             }
             readyMap.cameraPosition = CameraPosition.Builder()
                 .target(initialTarget)
@@ -177,6 +191,11 @@ fun MapScreen(
         }
     }
 
+    LaunchedEffect(map, deviceTarget) {
+        val target = deviceTarget ?: return@LaunchedEffect
+        map?.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 14.0))
+    }
+
     Box(modifier.fillMaxSize()) {
         AndroidView(
             factory = { mapView },
@@ -200,6 +219,18 @@ fun MapScreen(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
+            }
+        }
+
+        locationMessage?.let { message ->
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 62.dp, start = 18.dp, end = 18.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.96f),
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shadowElevation = 5.dp,
+            ) {
+                Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
             }
         }
 
@@ -244,6 +275,22 @@ fun MapScreen(
                 Icon(Icons.Rounded.TravelExplore, contentDescription = null)
                 Text("Search this area", Modifier.padding(start = 8.dp))
             }
+        }
+
+
+        Surface(
+            onClick = requestDeviceLocation,
+            modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            shadowElevation = 8.dp,
+        ) {
+            Icon(
+                Icons.Rounded.MyLocation,
+                contentDescription = "Go to my location",
+                modifier = Modifier.padding(14.dp).size(22.dp),
+            )
         }
     }
 

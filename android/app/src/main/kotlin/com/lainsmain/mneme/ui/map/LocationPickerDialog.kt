@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,7 +68,18 @@ fun LocationPickerDialog(
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var selectedTarget by remember(initialTarget) { mutableStateOf(initialTarget) }
+    var deviceTarget by remember { mutableStateOf<LatLng?>(null) }
+    var locationMessage by remember { mutableStateOf<String?>(null) }
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.35f
+    val requestDeviceLocation = rememberDeviceLocationRequest(
+        onLocation = { location ->
+            locationMessage = null
+            deviceTarget = LatLng(location.latitude, location.longitude)
+        },
+        onUnavailable = {
+            locationMessage = "Location is unavailable. Check the app permission and device location setting."
+        },
+    )
 
     DisposableEffect(mapView, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -118,6 +130,17 @@ fun LocationPickerDialog(
         )
     }
 
+    LaunchedEffect(map, deviceTarget) {
+        val target = deviceTarget ?: return@LaunchedEffect
+        val activeMap = map ?: return@LaunchedEffect
+        selectedTarget = target
+        activeMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 16.0))
+    }
+
+    LaunchedEffect(initialLatitude, initialLongitude) {
+        if (initialLatitude == null || initialLongitude == null) requestDeviceLocation()
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -150,9 +173,13 @@ fun LocationPickerDialog(
                         Column(Modifier.weight(1f)) {
                             Text("Choose a location", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "Move the map or long-press a point",
+                                locationMessage ?: "Move the map, long-press, or use your location",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (locationMessage == null) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
                             )
                         }
                     }
@@ -169,6 +196,24 @@ fun LocationPickerDialog(
                         Icons.Rounded.LocationOn,
                         contentDescription = "Selected map point",
                         modifier = Modifier.padding(10.dp).size(26.dp),
+                    )
+                }
+
+                Surface(
+                    onClick = requestDeviceLocation,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .systemBarsPadding()
+                        .padding(end = 22.dp, bottom = 112.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shadowElevation = 8.dp,
+                ) {
+                    Icon(
+                        Icons.Rounded.MyLocation,
+                        contentDescription = "Use my current location",
+                        modifier = Modifier.padding(14.dp).size(22.dp),
                     )
                 }
 
