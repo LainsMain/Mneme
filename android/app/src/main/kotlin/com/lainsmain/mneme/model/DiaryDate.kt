@@ -6,12 +6,14 @@ import java.time.LocalDateTime
 
 object DiaryDate {
     /**
-     * The suggested page is yesterday before [lateNightCutoffHour], but this is
-     * only a convenience. Every date remains editable at all times.
+     * Returns yesterday only during the late-night window from midnight until
+     * [lateNightCutoffHour]. Every date remains editable at all times.
      */
-    fun suggestedDate(clock: Clock, lateNightCutoffHour: Int = 4): LocalDate {
-        require(lateNightCutoffHour in 0..23)
+    fun yesterdaySuggestion(clock: Clock, lateNightCutoffHour: Int = 6): LocalDate? {
+        require(lateNightCutoffHour in 1..12)
         val now = LocalDateTime.now(clock)
-        return if (now.hour < lateNightCutoffHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
+        return now.takeIf { it.hour < lateNightCutoffHour }
+            ?.toLocalDate()
+            ?.minusDays(1)
     }
 }

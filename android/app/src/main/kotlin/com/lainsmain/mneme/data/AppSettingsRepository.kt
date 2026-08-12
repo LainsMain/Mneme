@@ -33,6 +33,7 @@ data class AppSettings(
     val theme: ThemePreference = ThemePreference.Dark,
     val colorPalette: ColorPalette = ColorPalette.Ocean,
     val useMaterialYou: Boolean = false,
+    val yesterdayPromptCutoffHour: Int = 6,
     val serverUrl: String = "",
     val serverToken: String = "",
     val serverConnected: Boolean = false,
@@ -60,6 +61,12 @@ class AppSettingsRepository(private val context: Context) {
     fun setColorPalette(palette: ColorPalette) {
         preferences.edit().putString(KEY_COLOR_PALETTE, palette.name).apply()
         _settings.value = _settings.value.copy(colorPalette = palette)
+    }
+
+    fun setYesterdayPromptCutoffHour(hour: Int) {
+        require(hour in 1..12)
+        preferences.edit().putInt(KEY_YESTERDAY_PROMPT_CUTOFF_HOUR, hour).apply()
+        _settings.value = _settings.value.copy(yesterdayPromptCutoffHour = hour)
     }
 
     fun backupNotificationPermissionAsked(): Boolean =
@@ -165,6 +172,9 @@ class AppSettingsRepository(private val context: Context) {
             ?.let { stored -> ColorPalette.entries.firstOrNull { it.name == stored } }
             ?: ColorPalette.Ocean,
         useMaterialYou = preferences.getBoolean(KEY_MATERIAL_YOU, false),
+        yesterdayPromptCutoffHour = preferences
+            .getInt(KEY_YESTERDAY_PROMPT_CUTOFF_HOUR, 6)
+            .coerceIn(1, 12),
         serverUrl = preferences.getString(KEY_SERVER_URL, "").orEmpty(),
         serverToken = preferences.getString(KEY_SERVER_TOKEN, null)
             ?.let(::decryptToken)
@@ -255,6 +265,7 @@ class AppSettingsRepository(private val context: Context) {
         const val KEY_THEME = "theme"
         const val KEY_MATERIAL_YOU = "material_you"
         const val KEY_COLOR_PALETTE = "color_palette"
+        const val KEY_YESTERDAY_PROMPT_CUTOFF_HOUR = "yesterday_prompt_cutoff_hour"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_SERVER_TOKEN = "server_token"
         const val KEY_SERVER_CONNECTED = "server_connected"

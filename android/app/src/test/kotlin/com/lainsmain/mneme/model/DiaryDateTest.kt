@@ -11,14 +11,20 @@ class DiaryDateTest {
     private val zone = ZoneId.of("Europe/Brussels")
 
     @Test
-    fun suggestsYesterdayBeforeCutoff() {
+    fun suggestsYesterdayBetweenMidnightAndCutoff() {
         val clock = Clock.fixed(Instant.parse("2026-08-11T00:30:00Z"), zone)
-        assertEquals(LocalDate.of(2026, 8, 10), DiaryDate.suggestedDate(clock, 4))
+        assertEquals(LocalDate.of(2026, 8, 10), DiaryDate.yesterdaySuggestion(clock, 6))
     }
 
     @Test
-    fun suggestsTodayAfterCutoff() {
-        val clock = Clock.fixed(Instant.parse("2026-08-11T08:00:00Z"), zone)
-        assertEquals(LocalDate.of(2026, 8, 11), DiaryDate.suggestedDate(clock, 4))
+    fun stopsSuggestingAtCutoff() {
+        val clock = Clock.fixed(Instant.parse("2026-08-11T04:00:00Z"), zone)
+        assertEquals(null, DiaryDate.yesterdaySuggestion(clock, 6))
+    }
+
+    @Test
+    fun respectsCustomCutoff() {
+        val clock = Clock.fixed(Instant.parse("2026-08-11T05:30:00Z"), zone)
+        assertEquals(LocalDate.of(2026, 8, 10), DiaryDate.yesterdaySuggestion(clock, 8))
     }
 }

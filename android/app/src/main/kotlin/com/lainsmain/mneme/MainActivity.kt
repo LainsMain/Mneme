@@ -76,6 +76,11 @@ class MainActivity : ComponentActivity() {
                     factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
                 )
                 val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(settingsState.settings.yesterdayPromptCutoffHour) {
+                    diaryViewModel.updateYesterdayPromptCutoffHour(
+                        settingsState.settings.yesterdayPromptCutoffHour,
+                    )
+                }
                 var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
                 val photoPicker = rememberLauncherForActivityResult(PickMultipleVisualMedia(20)) { uris ->
                     unlocked = true
@@ -161,6 +166,7 @@ class MainActivity : ComponentActivity() {
                     onThemeChange = settingsViewModel::setTheme,
                     onMaterialYouChange = settingsViewModel::setMaterialYou,
                     onColorPaletteChange = settingsViewModel::setColorPalette,
+                    onYesterdayPromptCutoffHourChange = settingsViewModel::setYesterdayPromptCutoffHour,
                     onSavePin = settingsViewModel::savePin,
                     onAppLockChange = settingsViewModel::setAppLock,
                     onBiometricChange = settingsViewModel::setBiometric,

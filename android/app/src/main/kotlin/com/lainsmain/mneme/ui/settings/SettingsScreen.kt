@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,6 +71,7 @@ import com.lainsmain.mneme.data.RemoteManifestPointer
 import java.text.DateFormat
 import java.util.Date
 import java.time.Instant
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -76,6 +79,7 @@ fun SettingsScreen(
     onThemeChange: (ThemePreference) -> Unit,
     onMaterialYouChange: (Boolean) -> Unit,
     onColorPaletteChange: (ColorPalette) -> Unit,
+    onYesterdayPromptCutoffHourChange: (Int) -> Unit,
     onSavePin: (String) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
     onBiometricChange: (Boolean) -> Unit,
@@ -186,6 +190,47 @@ fun SettingsScreen(
                         onCheckedChange = onMaterialYouChange,
                         enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
                     )
+                }
+            }
+        }
+
+        SettingsSectionTitle(
+            icon = { Icon(Icons.Rounded.Schedule, contentDescription = null) },
+            title = "Writing",
+            modifier = Modifier.padding(top = 28.dp, bottom = 12.dp),
+        )
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Yesterday shortcut",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Only show “Still writing about yesterday?” between midnight and " +
+                        "${state.settings.yesterdayPromptCutoffHour}:00 AM.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("1 AM", style = MaterialTheme.typography.labelSmall)
+                    Slider(
+                        value = state.settings.yesterdayPromptCutoffHour.toFloat().coerceIn(1f, 10f),
+                        onValueChange = {
+                            onYesterdayPromptCutoffHourChange(it.roundToInt().coerceIn(1, 10))
+                        },
+                        valueRange = 1f..10f,
+                        steps = 8,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("10 AM", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

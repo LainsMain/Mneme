@@ -12,11 +12,13 @@ import com.lainsmain.mneme.data.DatedAttachment
 import com.lainsmain.mneme.data.MonthlyRecap
 import com.lainsmain.mneme.data.PlaceSearchRepository
 import com.lainsmain.mneme.data.PlaceSuggestion
+import com.lainsmain.mneme.model.DiaryDate
 import com.lainsmain.mneme.model.RichTextDocument
 import java.time.Clock
+import java.time.Duration
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
+import java.time.ZonedDateTime
 import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -70,10 +72,7 @@ class DiaryViewModel(
         DiaryUiState(
             selectedDate = today,
             visibleMonth = YearMonth.from(today),
-            yesterdaySuggestion = LocalDateTime.now(clock)
-                .takeIf { it.hour < 4 }
-                ?.toLocalDate()
-                ?.minusDays(1),
+            yesterdaySuggestion = DiaryDate.yesterdaySuggestion(clock),
         ),
     )
     val uiState: StateFlow<DiaryUiState> = _uiState.asStateFlow()
@@ -90,6 +89,7 @@ class DiaryViewModel(
     private var recapSaveJob: Job? = null
     private var placeSearchJob: Job? = null
     private var automaticLocationJob: Job? = null
+    private var yesterdayPromptJob: Job? = null
     private var automaticLocationKey: String? = null
     private var attachmentsLoaded = false
     private var dirty = false
@@ -100,6 +100,26 @@ class DiaryViewModel(
         observeDate(today)
         observeMonth(YearMonth.from(today))
         observeAllContent()
+        updateYesterdayPromptCutoffHour(6)
+    }
+
+    fun updateYesterdayPromptCutoffHour(hour: Int) {
+        require(hour in 1..12)
+        yesterdayPromptJob?.cancel()
+        yesterdayPromptJob = viewModelScope.launch {
+            while (true) {
+                _uiState.value = _uiState.value.copy(
+                    yesterdaySuggestion = DiaryDate.yesterdaySuggestion(clock, hour),
+                )
+                val now = ZonedDateTime.now(clock)
+                val nextTransition = if (now.hour < hour) {
+                    now.toLocalDate().atTime(hour, 0).atZone(clock.zone)
+                } else {
+                    now.toLocalDate().plusDays(1).atStartOfDay(clock.zone)
+                }
+                delay(Duration.between(now, nextTransition).toMillis().coerceAtLeast(1_000L) + 250L)
+            }
+        }
     }
 
     fun previousDay() = selectDate(_uiState.value.selectedDate.minusDays(1))
