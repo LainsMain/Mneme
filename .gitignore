@@ -10,7 +10,6 @@ secrets.properties
 *.jks
 *.keystore
 captures/
-docs/promo/*.mp4
 
 # Local server state and deployment secrets
 server/data/
