@@ -113,6 +113,8 @@ class SettingsViewModel(
 
     fun setColorPalette(palette: ColorPalette) = repository.setColorPalette(palette)
 
+    fun setYesterdayPromptCutoffHour(hour: Int) = repository.setYesterdayPromptCutoffHour(hour)
+
     fun onAppForegrounded() {
         checkForUpdates(force = false)
         _uiState.value = _uiState.value.copy(
