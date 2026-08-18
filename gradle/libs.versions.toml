@@ -1,10 +1,10 @@
 [versions]
-agp = "8.13.2"
-kotlin = "2.3.0"
-composeBom = "2026.06.01"
+agp = "9.3.1"
+kotlin = "2.4.10"
+composeBom = "2026.08.00"
 activity = "1.13.0"
 # The next releases require API 37 and AGP 9.1; Mneme currently targets stable API 36.
-core = "1.17.0"
+core = "1.19.0"
 lifecycle = "2.10.0"
 room = "2.8.4"
 work = "2.11.2"
@@ -12,7 +12,7 @@ exif = "1.4.2"
 serialization = "1.11.0"
 coroutines = "1.11.0"
 junit = "4.13.2"
-mapLibre = "13.4.1"
+mapLibre = "13.5.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core" }
