@@ -53,6 +53,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.runtime.snapshotFlow
+import kotlin.math.abs
 
 private const val MONTHS_EACH_SIDE = 120
 
@@ -65,6 +68,8 @@ fun MonthScreen(
     onOpenDay: (LocalDate) -> Unit,
     recapMonths: Set<YearMonth>,
     onOpenRecap: (YearMonth) -> Unit,
+    showMonthlyRecaps: Boolean = true,
+    onVisibleMonthChange: (YearMonth) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val anchor = remember { YearMonth.from(selectedDate) }
@@ -82,6 +87,18 @@ fun MonthScreen(
         listState.animateScrollToItem(currentIndex.coerceAtLeast(0), initialOffset)
     }
 
+    LaunchedEffect(listState, months) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val center = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
+            layout.visibleItemsInfo.minByOrNull { item ->
+                abs(item.offset + item.size / 2 - center)
+            }?.index
+        }.distinctUntilChanged().collect { index ->
+            index?.let(months::getOrNull)?.let(onVisibleMonthChange)
+        }
+    }
+
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
@@ -95,7 +112,7 @@ fun MonthScreen(
                 selectedDate = selectedDate,
                 onOpenDay = onOpenDay,
                 hasRecap = month in recapMonths,
-                onOpenRecap = { onOpenRecap(month) },
+                onOpenRecap = if (showMonthlyRecaps) ({ onOpenRecap(month) }) else null,
             )
         }
     }
@@ -108,7 +125,7 @@ private fun MonthSection(
     selectedDate: LocalDate,
     onOpenDay: (LocalDate) -> Unit,
     hasRecap: Boolean,
-    onOpenRecap: () -> Unit,
+    onOpenRecap: (() -> Unit)?,
 ) {
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
     Column(
@@ -126,7 +143,11 @@ private fun MonthSection(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onOpenRecap) { Text(if (hasRecap) "Read recap" else "Write recap") }
+            if (onOpenRecap != null) {
+                TextButton(onClick = onOpenRecap) {
+                    Text(if (hasRecap) "Read recap" else "Write recap")
+                }
+            }
         }
         monthCells(month).chunked(7).forEach { week ->
             Row(

@@ -43,6 +43,7 @@ import java.time.LocalDate
 import com.lainsmain.mneme.widget.ACTION_OPEN_DIARY_DATE
 import com.lainsmain.mneme.widget.EXTRA_DIARY_DATE
 import com.lainsmain.mneme.widget.MnemeWidgetUpdater
+import com.lainsmain.mneme.data.EntryKind
 
 class MainActivity : ComponentActivity() {
     private var requestedWidgetDate by mutableStateOf<LocalDate?>(null)
@@ -83,32 +84,71 @@ class MainActivity : ComponentActivity() {
                         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                val diaryViewModel: DiaryViewModel = viewModel(
-                    factory = DiaryViewModel.Factory(application.diaryRepository, application.placeSearchRepository),
+                val dailyDiaryViewModel: DiaryViewModel = viewModel(
+                    key = "daily-diary",
+                    factory = DiaryViewModel.Factory(
+                        application.diaryRepository,
+                        application.placeSearchRepository,
+                        EntryKind.Daily,
+                        application.entrySessionRepository,
+                    ),
                 )
-                val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
+                val dreamDiaryViewModel: DiaryViewModel = viewModel(
+                    key = "dream-diary",
+                    factory = DiaryViewModel.Factory(
+                        application.diaryRepository,
+                        application.placeSearchRepository,
+                        EntryKind.Dream,
+                        application.entrySessionRepository,
+                    ),
+                )
+                val dailyState by dailyDiaryViewModel.uiState.collectAsStateWithLifecycle()
+                val dreamState by dreamDiaryViewModel.uiState.collectAsStateWithLifecycle()
+                val activeKind = settingsState.settings.activeEntryKind.takeIf {
+                    it != EntryKind.Dream || settingsState.settings.dreamDiaryEnabled
+                } ?: EntryKind.Daily
+                val diaryViewModel = if (activeKind == EntryKind.Dream) {
+                    dreamDiaryViewModel
+                } else {
+                    dailyDiaryViewModel
+                }
+                val state = if (activeKind == EntryKind.Dream) dreamState else dailyState
                 LaunchedEffect(requestedWidgetDate) {
-                    requestedWidgetDate?.let(diaryViewModel::selectDate)
+                    requestedWidgetDate?.let { date ->
+                        settingsViewModel.setActiveEntryKind(EntryKind.Daily)
+                        dailyDiaryViewModel.selectDate(date)
+                    }
                 }
                 LaunchedEffect(settingsState.settings.appLockEnabled) {
                     MnemeWidgetUpdater.requestUpdate(application)
                 }
                 LaunchedEffect(settingsState.settings.yesterdayPromptCutoffHour) {
-                    diaryViewModel.updateYesterdayPromptCutoffHour(
+                    dailyDiaryViewModel.updateYesterdayPromptCutoffHour(
                         settingsState.settings.yesterdayPromptCutoffHour,
                     )
                 }
                 var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+                var pendingPhotoKind by rememberSaveable { mutableStateOf(EntryKind.Daily.storageValue) }
                 val photoPicker = rememberLauncherForActivityResult(PickMultipleVisualMedia(20)) { uris ->
                     unlocked = true
-                    diaryViewModel.addPhotos(uris)
+                    val target = if (pendingPhotoKind == EntryKind.Dream.storageValue) {
+                        dreamDiaryViewModel
+                    } else {
+                        dailyDiaryViewModel
+                    }
+                    target.addPhotos(uris)
                 }
                 val camera = rememberLauncherForActivityResult(TakePicture()) { saved ->
                     val capturedUri = pendingCameraUri?.let(Uri::parse)
                     pendingCameraUri = null
                     unlocked = true
                     if (saved && capturedUri != null) {
-                        diaryViewModel.addPhotos(listOf(capturedUri))
+                        val target = if (pendingPhotoKind == EntryKind.Dream.storageValue) {
+                            dreamDiaryViewModel
+                        } else {
+                            dailyDiaryViewModel
+                        }
+                        target.addPhotos(listOf(capturedUri))
                     }
                 }
                 val diaryExport = rememberLauncherForActivityResult(CreateDocument("application/zip")) { uri ->
@@ -149,17 +189,26 @@ class MainActivity : ComponentActivity() {
                 MnemeApp(
                     state = state,
                     journalOpenKey = widgetOpenKey,
+                    dreamDiaryEnabled = settingsState.settings.dreamDiaryEnabled,
+                    dailyInitialDestination = application.entrySessionRepository.destination(EntryKind.Daily),
+                    dreamInitialDestination = application.entrySessionRepository.destination(EntryKind.Dream),
+                    onEntryKindChange = settingsViewModel::setActiveEntryKind,
+                    onDestinationChanged = { kind, destination ->
+                        application.entrySessionRepository.setDestination(kind, destination)
+                    },
                     onPreviousDay = diaryViewModel::previousDay,
                     onNextDay = diaryViewModel::nextDay,
                     onToday = diaryViewModel::today,
                     onSelectDate = diaryViewModel::selectDate,
                     onDocumentChange = diaryViewModel::updateDocument,
                     onChoosePhotos = {
+                        pendingPhotoKind = activeKind.storageValue
                         photoPicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
                     },
                     onTakePhoto = {
                         val uri = runCatching { createCameraUri() }.getOrNull()
                         if (uri != null) {
+                            pendingPhotoKind = activeKind.storageValue
                             pendingCameraUri = uri.toString()
                             runCatching { camera.launch(uri) }
                                 .onFailure { pendingCameraUri = null }
@@ -177,6 +226,7 @@ class MainActivity : ComponentActivity() {
                     onPreviousMonth = diaryViewModel::previousMonth,
                     onNextMonth = diaryViewModel::nextMonth,
                     onCurrentMonth = diaryViewModel::currentMonth,
+                    onVisibleMonthChange = diaryViewModel::setVisibleMonth,
                     onOpenRecap = diaryViewModel::openRecap,
                     onCloseRecap = diaryViewModel::closeRecap,
                     onPreviousRecapMonth = diaryViewModel::previousRecapMonth,
@@ -187,6 +237,7 @@ class MainActivity : ComponentActivity() {
                     onMaterialYouChange = settingsViewModel::setMaterialYou,
                     onColorPaletteChange = settingsViewModel::setColorPalette,
                     onYesterdayPromptCutoffHourChange = settingsViewModel::setYesterdayPromptCutoffHour,
+                    onDreamDiaryEnabledChange = settingsViewModel::setDreamDiaryEnabled,
                     onSavePin = settingsViewModel::savePin,
                     onAppLockChange = settingsViewModel::setAppLock,
                     onBiometricChange = settingsViewModel::setBiometric,

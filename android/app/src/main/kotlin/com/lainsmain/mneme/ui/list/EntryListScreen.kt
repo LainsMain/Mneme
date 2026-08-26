@@ -43,16 +43,18 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.lainsmain.mneme.data.EntryKind
 
 @Composable
 fun EntryListScreen(
     entries: List<DaySummary>,
+    entryKind: EntryKind,
     onOpenDay: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val grouped = entries.groupBy { YearMonth.from(it.date) }
     if (entries.isEmpty()) {
-        EmptyList(modifier)
+        EmptyList(entryKind, modifier)
         return
     }
     LazyColumn(
@@ -62,7 +64,7 @@ fun EntryListScreen(
         grouped.forEach { (month, monthEntries) ->
             item(key = "header-$month") { MonthLabel(month) }
             items(monthEntries, key = { it.date.toEpochDay() }) { entry ->
-                EntryRow(entry = entry, onClick = { onOpenDay(entry.date) })
+                EntryRow(entry = entry, entryKind = entryKind, onClick = { onOpenDay(entry.date) })
             }
         }
     }
@@ -83,10 +85,14 @@ private fun MonthLabel(month: YearMonth) {
 }
 
 @Composable
-private fun EntryRow(entry: DaySummary, onClick: () -> Unit) {
+private fun EntryRow(entry: DaySummary, entryKind: EntryKind, onClick: () -> Unit) {
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
     val lines = entry.plainText.lines().filter { it.isNotBlank() }
-    val title = lines.firstOrNull() ?: if (entry.attachmentCount > 0) "Photo entry" else "Journal entry"
+    val title = lines.firstOrNull() ?: when {
+        entry.attachmentCount > 0 -> "Photo entry"
+        entryKind == EntryKind.Dream -> "Dream"
+        else -> "Journal entry"
+    }
     val excerpt = lines.drop(1).joinToString(" ").ifBlank { entry.plainText }
     Row(
         modifier = Modifier
@@ -168,13 +174,19 @@ private fun EntryThumbnail(path: String) {
 }
 
 @Composable
-private fun EmptyList(modifier: Modifier) {
+private fun EmptyList(entryKind: EntryKind, modifier: Modifier) {
     Column(
         modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Your journal will appear here", style = MaterialTheme.typography.titleLarge)
-        Text("Entries are listed newest first.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            if (entryKind == EntryKind.Dream) "Your dreams will appear here" else "Your journal will appear here",
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            if (entryKind == EntryKind.Dream) "Dreams use the date you woke up." else "Entries are listed newest first.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

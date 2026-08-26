@@ -15,11 +15,16 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-data class DiaryExportResult(val entryCount: Int, val photoCount: Int, val recapCount: Int)
+data class DiaryExportResult(
+    val entryCount: Int,
+    val dreamEntryCount: Int,
+    val photoCount: Int,
+    val recapCount: Int,
+)
 
 @Serializable
 private data class PortableDiaryManifest(
-    val format: String = "mneme-portable-export-v2",
+    val format: String = "mneme-portable-export-v3",
     val createdAt: String,
     val entries: List<PortableEntry>,
     val photos: List<PortablePhoto>,
@@ -29,6 +34,7 @@ private data class PortableDiaryManifest(
 @Serializable
 private data class PortableEntry(
     val id: String,
+    val entryKind: String,
     val date: String,
     val documentJson: String,
     val plainText: String,
@@ -80,26 +86,34 @@ class DiaryExportRepository(
                 zip.writeText(
                     "README.txt",
                     "Mneme diary export\nCreated $createdAt\n\n" +
-                        "Open index.html in a browser, or read the Markdown files in entries/ and recaps/. " +
+                        "Open index.html in a browser, or read the Markdown files in entries/, dreams/, " +
+                        "and recaps/. " +
                         "Original photos and their metadata are in media/. manifest.json contains a complete " +
                         "machine-readable index for future tools and migrations. This archive is not encrypted.\n",
                 )
-                val indexRows = snapshot.pages.sortedByDescending(DiaryPageEntity::diaryDate).joinToString("\n") { page ->
+                fun indexRows(kind: EntryKind) = snapshot.pages
+                    .filter { EntryKind.fromStorage(it.entryKind) == kind }
+                    .sortedByDescending(DiaryPageEntity::diaryDate)
+                    .joinToString("\n") { page ->
                     "<li class=\"${if (page.isFavorite) "favorite" else ""}\">" +
                         "${if (page.isFavorite) "<span title=\"Favorite\">★</span> " else ""}" +
-                        "<a href=\"entries/${page.diaryDate}.html\">${page.diaryDate}</a>" +
+                        "<a href=\"${entryDirectory(page)}/${page.diaryDate}.html\">${page.diaryDate}</a>" +
                         " — ${escapeHtml(page.plainText.take(120))}</li>"
                 }
+                val dailyRows = indexRows(EntryKind.Daily)
+                val dreamRows = indexRows(EntryKind.Dream)
                 val recapRows = snapshot.recaps.sortedByDescending(MonthlyRecapEntity::yearMonth).joinToString("\n") {
                     "<li><a href=\"recaps/${it.yearMonth}.html\">${it.yearMonth}</a></li>"
                 }
                 zip.writeText(
                     "index.html",
-                    htmlPage("Mneme diary", "<h1>Mneme diary</h1><h2>Entries</h2><ul>$indexRows</ul>" +
+                    htmlPage("Mneme diary", "<h1>Mneme diary</h1><h2>Entries</h2><ul>$dailyRows</ul>" +
+                        "<h2>Dreams</h2><ul>$dreamRows</ul>" +
                         "<h2>Monthly recaps</h2><ul>$recapRows</ul>"),
                 )
                 zip.writeText("manifest.json", portableManifest(snapshot, createdAt))
                 snapshot.pages.forEach { page ->
+                    val directory = entryDirectory(page)
                     val document = decode(page.documentJson, page.plainText)
                     val photoLinks = photosByPage[page.id].orEmpty().joinToString("\n") { photo ->
                         val fileName = photoExportName(photo)
@@ -116,7 +130,7 @@ class DiaryExportRepository(
                         .orEmpty()
                     val favorite = if (page.isFavorite) "<p class=\"favorite\">★ Favorite</p>" else ""
                     zip.writeText(
-                        "entries/${page.diaryDate}.html",
+                        "$directory/${page.diaryDate}.html",
                         htmlPage(page.diaryDate, "<h1>${page.diaryDate}</h1>$favorite$location<div class=\"writing\">" +
                             renderHtml(document) + "</div><div class=\"photos\">$photoLinks</div>"),
                     )
@@ -137,7 +151,7 @@ class DiaryExportRepository(
                         "\n\n## Photos\n\n$photoMarkdown\n"
                     } else "\n"
                     zip.writeText(
-                        "entries/${page.diaryDate}.md",
+                        "$directory/${page.diaryDate}.md",
                         "# ${page.diaryDate}\n\n$favoriteMarkdown$locationMarkdown" +
                             renderMarkdown(document) + photosMarkdown,
                     )
@@ -157,7 +171,16 @@ class DiaryExportRepository(
                     zip.writeText("media/$fileName.metadata.json", photoMetadata(photo))
                 }
             }
-            DiaryExportResult(snapshot.pages.size, snapshot.attachments.size, snapshot.recaps.size)
+            DiaryExportResult(
+                entryCount = snapshot.pages.count {
+                    EntryKind.fromStorage(it.entryKind) == EntryKind.Daily
+                },
+                dreamEntryCount = snapshot.pages.count {
+                    EntryKind.fromStorage(it.entryKind) == EntryKind.Dream
+                },
+                photoCount = snapshot.attachments.size,
+                recapCount = snapshot.recaps.size,
+            )
         }
     }
 
@@ -237,6 +260,7 @@ class DiaryExportRepository(
                 entries = snapshot.pages.map { page ->
                     PortableEntry(
                         id = page.id,
+                        entryKind = EntryKind.fromStorage(page.entryKind).storageValue,
                         date = page.diaryDate,
                         documentJson = page.documentJson,
                         plainText = page.plainText,
@@ -274,6 +298,9 @@ class DiaryExportRepository(
                 },
             ),
         )
+
+    private fun entryDirectory(page: DiaryPageEntity): String =
+        if (EntryKind.fromStorage(page.entryKind) == EntryKind.Dream) "dreams" else "entries"
 
     private fun htmlPage(title: String, body: String) = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">

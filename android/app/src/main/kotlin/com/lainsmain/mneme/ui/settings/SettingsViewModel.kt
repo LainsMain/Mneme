@@ -15,6 +15,7 @@ import com.lainsmain.mneme.data.UpdateRepository
 import com.lainsmain.mneme.data.UpdateDownloadPhase
 import com.lainsmain.mneme.data.DiaryExportRepository
 import com.lainsmain.mneme.data.RemoteManifestPointer
+import com.lainsmain.mneme.data.EntryKind
 import com.lainsmain.mneme.data.ServerStorageStats
 import com.lainsmain.mneme.BuildConfig
 import kotlinx.coroutines.CancellationException
@@ -114,6 +115,10 @@ class SettingsViewModel(
     fun setColorPalette(palette: ColorPalette) = repository.setColorPalette(palette)
 
     fun setYesterdayPromptCutoffHour(hour: Int) = repository.setYesterdayPromptCutoffHour(hour)
+
+    fun setDreamDiaryEnabled(enabled: Boolean) = repository.setDreamDiaryEnabled(enabled)
+
+    fun setActiveEntryKind(entryKind: EntryKind) = repository.setActiveEntryKind(entryKind)
 
     fun onAppForegrounded() {
         checkForUpdates(force = false)
@@ -277,7 +282,8 @@ class SettingsViewModel(
                 onSuccess = { result ->
                     _uiState.value = _uiState.value.copy(
                         exportStatus = ExportStatus.Complete,
-                        exportMessage = "Exported ${result.entryCount} entries, ${result.photoCount} photos, " +
+                        exportMessage = "Exported ${result.entryCount} journal entries, " +
+                            "${result.dreamEntryCount} dreams, ${result.photoCount} photos, " +
                             "and ${result.recapCount} recaps.",
                     )
                 },

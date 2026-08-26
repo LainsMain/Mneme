@@ -21,11 +21,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +77,7 @@ import com.lainsmain.mneme.data.ThemePreference
 import com.lainsmain.mneme.data.ReleaseInfo
 import com.lainsmain.mneme.data.ColorPalette
 import com.lainsmain.mneme.data.RemoteManifestPointer
+import com.lainsmain.mneme.data.EntryKind
 import com.lainsmain.mneme.ui.settings.SettingsScreen
 import com.lainsmain.mneme.ui.settings.SettingsUiState
 import java.time.LocalDate
@@ -90,6 +96,11 @@ private enum class JournalDestination(val label: String) {
 fun MnemeApp(
     state: DiaryUiState,
     journalOpenKey: Int,
+    dreamDiaryEnabled: Boolean,
+    dailyInitialDestination: String,
+    dreamInitialDestination: String,
+    onEntryKindChange: (EntryKind) -> Unit,
+    onDestinationChanged: (EntryKind, String) -> Unit,
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
     onToday: () -> Unit,
@@ -109,6 +120,7 @@ fun MnemeApp(
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
+    onVisibleMonthChange: (YearMonth) -> Unit,
     onOpenRecap: (YearMonth) -> Unit,
     onCloseRecap: () -> Unit,
     onPreviousRecapMonth: () -> Unit,
@@ -119,6 +131,7 @@ fun MnemeApp(
     onMaterialYouChange: (Boolean) -> Unit,
     onColorPaletteChange: (ColorPalette) -> Unit,
     onYesterdayPromptCutoffHourChange: (Int) -> Unit,
+    onDreamDiaryEnabledChange: (Boolean) -> Unit,
     onSavePin: (String) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
     onBiometricChange: (Boolean) -> Unit,
@@ -134,8 +147,24 @@ fun MnemeApp(
     onDownloadUpdate: (ReleaseInfo) -> Unit,
     onInstallDownloadedUpdate: () -> Unit,
 ) {
-    var destination by remember { mutableStateOf(JournalDestination.Journal) }
-    var mediaTodayJumpKey by remember { mutableIntStateOf(0) }
+    var dailyDestination by rememberSaveable {
+        mutableStateOf(destinationFromStorage(dailyInitialDestination))
+    }
+    var dreamDestination by rememberSaveable {
+        mutableStateOf(destinationFromStorage(dreamInitialDestination))
+    }
+    val destination = if (state.entryKind == EntryKind.Dream) dreamDestination else dailyDestination
+    fun selectDestination(target: JournalDestination) {
+        if (state.entryKind == EntryKind.Dream) dreamDestination = target else dailyDestination = target
+        onDestinationChanged(state.entryKind, target.name)
+    }
+    var dailyMediaTodayJumpKey by remember { mutableIntStateOf(0) }
+    var dreamMediaTodayJumpKey by remember { mutableIntStateOf(0) }
+    val mediaTodayJumpKey = if (state.entryKind == EntryKind.Dream) {
+        dreamMediaTodayJumpKey
+    } else {
+        dailyMediaTodayJumpKey
+    }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
@@ -143,7 +172,9 @@ fun MnemeApp(
     val clipboard = LocalClipboardManager.current
     LaunchedEffect(journalOpenKey) {
         if (journalOpenKey > 0) {
-            destination = JournalDestination.Journal
+            onEntryKindChange(EntryKind.Daily)
+            dailyDestination = JournalDestination.Journal
+            onDestinationChanged(EntryKind.Daily, JournalDestination.Journal.name)
             showSettings = false
             showSearch = false
         }
@@ -191,16 +222,26 @@ fun MnemeApp(
                                     }
                                 }
                             }
-                            Text(
-                                text = when {
-                                    showSettings -> "Settings"
-                                    showSearch -> "Search"
-                                    state.recapMonth != null -> "Monthly recap"
-                                    else -> "Mneme"
-                                },
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                            if (
+                                dreamDiaryEnabled && !showSettings && !showSearch &&
+                                state.recapMonth == null
+                            ) {
+                                EntryModeSelector(
+                                    selected = state.entryKind,
+                                    onSelected = onEntryKindChange,
+                                )
+                            } else {
+                                Text(
+                                    text = when {
+                                        showSettings -> "Settings"
+                                        showSearch -> "Search"
+                                        state.recapMonth != null -> "Monthly recap"
+                                        else -> "Mneme"
+                                    },
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
                         }
                     },
                     navigationIcon = {
@@ -225,7 +266,11 @@ fun MnemeApp(
                                 onClick = {
                                     when (destination) {
                                         JournalDestination.Calendar -> onCurrentMonth()
-                                        JournalDestination.Media -> mediaTodayJumpKey++
+                                        JournalDestination.Media -> if (state.entryKind == EntryKind.Dream) {
+                                            dreamMediaTodayJumpKey++
+                                        } else {
+                                            dailyMediaTodayJumpKey++
+                                        }
                                         else -> onToday()
                                     }
                                 },
@@ -234,7 +279,14 @@ fun MnemeApp(
                                 Text("Today", modifier = Modifier.padding(start = 6.dp))
                             }
                             IconButton(onClick = { showSearch = true }) {
-                                Icon(Icons.Rounded.Search, contentDescription = "Search journal")
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = if (state.entryKind == EntryKind.Dream) {
+                                        "Search dreams"
+                                    } else {
+                                        "Search journal"
+                                    },
+                                )
                             }
                             IconButton(onClick = { showSettings = true }) {
                                 Icon(Icons.Rounded.Settings, contentDescription = "Settings")
@@ -248,7 +300,8 @@ fun MnemeApp(
                 if (!showSettings && !showSearch && state.recapMonth == null) {
                     JournalNavigation(
                         selected = destination,
-                        onSelected = { destination = it },
+                        entryKind = state.entryKind,
+                        onSelected = ::selectDestination,
                     )
                 }
             }
@@ -269,13 +322,14 @@ fun MnemeApp(
                     .consumeWindowInsets(contentPadding),
             )
         } else AnimatedContent(
-            targetState = Triple(showSettings, showSearch, destination),
+            targetState = state.entryKind to Triple(showSettings, showSearch, destination),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
                 .consumeWindowInsets(contentPadding),
             label = "journal destination",
-        ) { (settingsVisible, searchVisible, target) ->
+        ) { (_, screen) ->
+            val (settingsVisible, searchVisible, target) = screen
             if (settingsVisible) {
                 SettingsScreen(
                     state = settingsState,
@@ -283,6 +337,7 @@ fun MnemeApp(
                     onMaterialYouChange = onMaterialYouChange,
                     onColorPaletteChange = onColorPaletteChange,
                     onYesterdayPromptCutoffHourChange = onYesterdayPromptCutoffHourChange,
+                    onDreamDiaryEnabledChange = onDreamDiaryEnabledChange,
                     onSavePin = onSavePin,
                     onAppLockChange = onAppLockChange,
                     onBiometricChange = onBiometricChange,
@@ -303,7 +358,7 @@ fun MnemeApp(
                     entries = state.allDays,
                     onOpenDay = { date ->
                         onSelectDate(date)
-                        destination = JournalDestination.Journal
+                        selectDestination(JournalDestination.Journal)
                         showSearch = false
                     },
                 )
@@ -329,9 +384,10 @@ fun MnemeApp(
 
                 JournalDestination.List -> EntryListScreen(
                     entries = state.allDays,
+                    entryKind = state.entryKind,
                     onOpenDay = { date ->
                         onSelectDate(date)
-                        destination = JournalDestination.Journal
+                        selectDestination(JournalDestination.Journal)
                     },
                 )
 
@@ -342,14 +398,17 @@ fun MnemeApp(
                     jumpKey = state.calendarJumpKey,
                     onOpenDay = { date ->
                         onSelectDate(date)
-                        destination = JournalDestination.Journal
+                        selectDestination(JournalDestination.Journal)
                     },
                     recapMonths = state.recapMonths,
                     onOpenRecap = onOpenRecap,
+                    showMonthlyRecaps = state.entryKind == EntryKind.Daily,
+                    onVisibleMonthChange = onVisibleMonthChange,
                 )
 
                 JournalDestination.Media -> MediaScreen(
                     media = state.allMedia,
+                    entryKind = state.entryKind,
                     todayJumpKey = mediaTodayJumpKey,
                     onMakePrimary = onMakePhotoPrimary,
                     onDelete = onDeletePhoto,
@@ -358,9 +417,10 @@ fun MnemeApp(
 
                 JournalDestination.Map -> MapScreen(
                     entries = state.allDays,
+                    entryKind = state.entryKind,
                     onOpenDay = { date ->
                         onSelectDate(date)
-                        destination = JournalDestination.Journal
+                        selectDestination(JournalDestination.Journal)
                     },
                 )
             }
@@ -431,9 +491,49 @@ fun MnemeApp(
     }
 }
 
+private fun destinationFromStorage(value: String): JournalDestination =
+    JournalDestination.entries.firstOrNull { it.name == value } ?: JournalDestination.Journal
+
+@Composable
+private fun EntryModeSelector(
+    selected: EntryKind,
+    onSelected: (EntryKind) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(
+                if (selected == EntryKind.Dream) "Dreams" else "Journal",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Switch diary")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Journal") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onSelected(EntryKind.Daily)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Dreams") },
+                leadingIcon = { Icon(Icons.Rounded.Bedtime, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onSelected(EntryKind.Dream)
+                },
+            )
+        }
+    }
+}
+
 @Composable
 private fun JournalNavigation(
     selected: JournalDestination,
+    entryKind: EntryKind,
     onSelected: (JournalDestination) -> Unit,
 ) {
     Surface(
@@ -461,7 +561,9 @@ private fun JournalNavigation(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = destination.label,
+                        text = if (
+                            destination == JournalDestination.Journal && entryKind == EntryKind.Dream
+                        ) "Dream" else destination.label,
                         color = labelColor,
                         fontSize = 13.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,

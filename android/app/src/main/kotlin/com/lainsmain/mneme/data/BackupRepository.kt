@@ -120,6 +120,7 @@ class BackupRepository(
                 val pages = manifest.pages.map { page ->
                     DiaryPageEntity(
                         id = page.id,
+                        entryKind = EntryKind.fromStorage(page.entryKind).storageValue,
                         diaryDate = page.date,
                         documentJson = page.document,
                         plainText = page.plainText,
@@ -203,6 +204,9 @@ class BackupRepository(
                 }
                 recoveryKeyManager.importRecoveryCode(recoveryCode)
                 diaryDao.restoreBackup(pages, attachments, recaps)
+                if (pages.any { it.entryKind == EntryKind.Dream.storageValue }) {
+                    settingsRepository.setDreamDiaryEnabled(true)
+                }
                 MnemeWidgetUpdater.requestUpdate(context)
                 objectCache().edit().clear().apply()
                 RestoreResult(pages.size, attachments.size, recaps.size)
@@ -309,6 +313,7 @@ class BackupRepository(
         pages = pages.map { page ->
             VaultPage(
                 id = page.id,
+                entryKind = page.entryKind,
                 date = page.diaryDate,
                 document = page.documentJson,
                 plainText = page.plainText,

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lainsmain.mneme.data.DiaryAttachment
 import com.lainsmain.mneme.data.PlaceSuggestion
+import com.lainsmain.mneme.data.EntryKind
 import com.lainsmain.mneme.model.RichTextDocument
 import com.lainsmain.mneme.ui.editor.RichTextEditor
 import com.lainsmain.mneme.ui.editor.RichTextFormattingBar
@@ -89,12 +90,13 @@ fun DiaryScreen(
     onClearPlaceSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedPhoto by remember(state.selectedDate) {
+    var selectedPhoto by remember(state.entryKind, state.selectedDate) {
         mutableStateOf<DiaryAttachment?>(null)
     }
-    var showLocationDialog by remember(state.selectedDate) { mutableStateOf(false) }
-    var showMapPicker by remember(state.selectedDate) { mutableStateOf(false) }
-    val editorState = rememberRichTextEditorState(state.selectedDate.toString(), state.document)
+    var showLocationDialog by remember(state.entryKind, state.selectedDate) { mutableStateOf(false) }
+    var showMapPicker by remember(state.entryKind, state.selectedDate) { mutableStateOf(false) }
+    val documentKey = "${state.entryKind.storageValue}:${state.selectedDate}"
+    val editorState = rememberRichTextEditorState(documentKey, state.document)
 
     Column(modifier = modifier.fillMaxSize().imePadding()) {
         Column(
@@ -107,6 +109,7 @@ fun DiaryScreen(
             Spacer(Modifier.height(12.dp))
             EntryDateHeader(
                 date = state.selectedDate,
+                entryKind = state.entryKind,
                 isSaving = state.isSaving,
                 onPreviousDay = onPreviousDay,
                 onNextDay = onNextDay,
@@ -135,9 +138,14 @@ fun DiaryScreen(
 
             RichTextEditor(
                 document = state.document,
-                documentKey = state.selectedDate.toString(),
+                documentKey = documentKey,
                 state = editorState,
                 onDocumentChange = onDocumentChange,
+                placeholder = if (state.entryKind == EntryKind.Dream) {
+                    "Write down what you remember from last night…"
+                } else {
+                    "Give today a title, or simply start writing…"
+                },
                 modifier = Modifier.padding(top = 20.dp),
             )
             if (state.isImportingPhotos) {
@@ -252,6 +260,7 @@ fun DiaryScreen(
 @Composable
 private fun EntryDateHeader(
     date: LocalDate,
+    entryKind: EntryKind,
     isSaving: Boolean,
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
@@ -283,12 +292,16 @@ private fun EntryDateHeader(
             }
             AnimatedContent(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                targetState = date,
+                targetState = entryKind to date,
                 label = "entry date",
-            ) { targetDate ->
+            ) { (targetKind, targetDate) ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = targetDate.format(DateTimeFormatter.ofPattern("EEEE", locale)).uppercase(locale),
+                        text = if (targetKind == EntryKind.Dream) {
+                            "DREAMS FROM LAST NIGHT"
+                        } else {
+                            targetDate.format(DateTimeFormatter.ofPattern("EEEE", locale)).uppercase(locale)
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (isFavorite) FavoriteGold else MaterialTheme.colorScheme.primary,

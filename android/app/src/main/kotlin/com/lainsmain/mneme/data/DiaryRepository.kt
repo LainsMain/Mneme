@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 
 data class DiaryPage(
     val id: String,
+    val entryKind: EntryKind,
     val date: LocalDate,
     val document: RichTextDocument,
     val revision: Long,
@@ -103,11 +104,12 @@ class DiaryRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    fun observePage(date: LocalDate): Flow<DiaryPage?> =
-        diaryDao.observePage(date.toString()).map { entity -> entity?.toModel() }
+    fun observePage(entryKind: EntryKind, date: LocalDate): Flow<DiaryPage?> =
+        diaryDao.observePage(entryKind.storageValue, date.toString()).map { entity -> entity?.toModel() }
 
-    fun observeMonth(month: YearMonth): Flow<Map<LocalDate, DaySummary>> =
+    fun observeMonth(entryKind: EntryKind, month: YearMonth): Flow<Map<LocalDate, DaySummary>> =
         diaryDao.observeMonth(
+            entryKind = entryKind.storageValue,
             firstDate = month.atDay(1).toString(),
             lastDate = month.atEndOfMonth().toString(),
         ).map { rows ->
@@ -132,7 +134,8 @@ class DiaryRepository(
             }
         }
 
-    fun observeAllDays(): Flow<List<DaySummary>> = diaryDao.observeAllDays().map { rows ->
+    fun observeAllDays(entryKind: EntryKind): Flow<List<DaySummary>> =
+        diaryDao.observeAllDays(entryKind.storageValue).map { rows ->
         rows.map { row ->
             val date = LocalDate.parse(row.diaryDate)
             DaySummary(
@@ -149,9 +152,10 @@ class DiaryRepository(
                 photoCaptions = row.photoCaptions,
             )
         }
-    }
+        }
 
-    fun observeAllMedia(): Flow<List<DatedAttachment>> = diaryDao.observeAllMedia().map { rows ->
+    fun observeAllMedia(entryKind: EntryKind): Flow<List<DatedAttachment>> =
+        diaryDao.observeAllMedia(entryKind.storageValue).map { rows ->
         rows.map {
             DatedAttachment(
                 date = LocalDate.parse(it.diaryDate),
@@ -159,10 +163,10 @@ class DiaryRepository(
                 isFavorite = it.isFavorite,
             )
         }
-    }
+        }
 
-    fun observeAttachments(date: LocalDate): Flow<List<DiaryAttachment>> =
-        diaryDao.observeAttachments(date.toString()).map { attachments ->
+    fun observeAttachments(entryKind: EntryKind, date: LocalDate): Flow<List<DiaryAttachment>> =
+        diaryDao.observeAttachments(entryKind.storageValue, date.toString()).map { attachments ->
             attachments.map { it.toModel() }
         }
 
@@ -245,10 +249,16 @@ class DiaryRepository(
         PhotoImportResult(imported = imported, failed = failed)
     }
 
-    suspend fun save(date: LocalDate, existing: DiaryPage?, document: RichTextDocument): DiaryPage {
+    suspend fun save(
+        entryKind: EntryKind,
+        date: LocalDate,
+        existing: DiaryPage?,
+        document: RichTextDocument,
+    ): DiaryPage {
         val now = clock.millis()
         val page = DiaryPageEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
+            entryKind = entryKind.storageValue,
             diaryDate = date.toString(),
             documentJson = json.encodeToString(RichTextDocument.serializer(), document),
             plainText = document.text,
@@ -339,6 +349,7 @@ class DiaryRepository(
 
     private fun DiaryPageEntity.toModel() = DiaryPage(
         id = id,
+        entryKind = EntryKind.fromStorage(entryKind),
         date = LocalDate.parse(diaryDate),
         document = runCatching {
             json.decodeFromString(RichTextDocument.serializer(), documentJson)

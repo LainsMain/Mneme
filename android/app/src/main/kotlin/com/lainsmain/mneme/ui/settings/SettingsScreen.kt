@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,6 +81,7 @@ fun SettingsScreen(
     onMaterialYouChange: (Boolean) -> Unit,
     onColorPaletteChange: (ColorPalette) -> Unit,
     onYesterdayPromptCutoffHourChange: (Int) -> Unit,
+    onDreamDiaryEnabledChange: (Boolean) -> Unit,
     onSavePin: (String) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
     onBiometricChange: (Boolean) -> Unit,
@@ -204,6 +206,34 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Bedtime,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Dream diary",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Keep dreams in a separate diary using their wake-up date. Turning this off hides them; it never deletes them.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.settings.dreamDiaryEnabled,
+                        onCheckedChange = onDreamDiaryEnabledChange,
+                    )
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text(
                     "Yesterday shortcut",
                     style = MaterialTheme.typography.titleMedium,
