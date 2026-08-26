@@ -38,6 +38,11 @@ There are no accounts, ads, analytics, or mandatory cloud services. Your diary
 lives on your phone first. Backup is optional, self-hosted, and encrypted before
 anything leaves the device.
 
+An optional **Dream diary** can be enabled under Settings → Writing. It uses the
+wake-up date and mirrors the journal's writing, photos, places, favorites, list,
+calendar, media, map, and search without mixing dream content into ordinary
+days. Turning the mode off only hides it; dreams remain backed up and exportable.
+
 ## A diary that feels like yours
 
 - **Writing, not markup.** Bold, italic, underline, headings, and strike-through
@@ -93,7 +98,7 @@ the widgets hide journal content and open Mneme through the normal unlock flow.
         <li>Immediate relock when Mneme leaves the foreground</li>
         <li>AES-256-GCM encryption before self-hosted backup</li>
         <li>Portable recovery code for restoring on a new phone</li>
-        <li>Readable HTML, Markdown, original-photo, metadata, and structured-manifest ZIP export</li>
+        <li>Readable HTML, Markdown, original-photo, metadata, and structured-manifest ZIP export, with dreams kept in their own folder</li>
         <li>No Google Maps key, account, analytics SDK, or ad SDK</li>
       </ul>
     </td>

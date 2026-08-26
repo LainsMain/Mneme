@@ -34,6 +34,8 @@ data class AppSettings(
     val colorPalette: ColorPalette = ColorPalette.Ocean,
     val useMaterialYou: Boolean = false,
     val yesterdayPromptCutoffHour: Int = 6,
+    val dreamDiaryEnabled: Boolean = false,
+    val activeEntryKind: EntryKind = EntryKind.Daily,
     val serverUrl: String = "",
     val serverToken: String = "",
     val serverConnected: Boolean = false,
@@ -67,6 +69,28 @@ class AppSettingsRepository(private val context: Context) {
         require(hour in 1..12)
         preferences.edit().putInt(KEY_YESTERDAY_PROMPT_CUTOFF_HOUR, hour).apply()
         _settings.value = _settings.value.copy(yesterdayPromptCutoffHour = hour)
+    }
+
+    fun setDreamDiaryEnabled(enabled: Boolean) {
+        val activeKind = if (enabled) _settings.value.activeEntryKind else EntryKind.Daily
+        preferences.edit()
+            .putBoolean(KEY_DREAM_DIARY_ENABLED, enabled)
+            .putString(KEY_ACTIVE_ENTRY_KIND, activeKind.storageValue)
+            .apply()
+        _settings.value = _settings.value.copy(
+            dreamDiaryEnabled = enabled,
+            activeEntryKind = activeKind,
+        )
+    }
+
+    fun setActiveEntryKind(entryKind: EntryKind) {
+        val resolved = if (entryKind == EntryKind.Dream && !_settings.value.dreamDiaryEnabled) {
+            EntryKind.Daily
+        } else {
+            entryKind
+        }
+        preferences.edit().putString(KEY_ACTIVE_ENTRY_KIND, resolved.storageValue).apply()
+        _settings.value = _settings.value.copy(activeEntryKind = resolved)
     }
 
     fun backupNotificationPermissionAsked(): Boolean =
@@ -175,6 +199,12 @@ class AppSettingsRepository(private val context: Context) {
         yesterdayPromptCutoffHour = preferences
             .getInt(KEY_YESTERDAY_PROMPT_CUTOFF_HOUR, 6)
             .coerceIn(1, 12),
+        dreamDiaryEnabled = preferences.getBoolean(KEY_DREAM_DIARY_ENABLED, false),
+        activeEntryKind = EntryKind.fromStorage(
+            preferences.getString(KEY_ACTIVE_ENTRY_KIND, EntryKind.Daily.storageValue),
+        ).takeIf { kind ->
+            kind != EntryKind.Dream || preferences.getBoolean(KEY_DREAM_DIARY_ENABLED, false)
+        } ?: EntryKind.Daily,
         serverUrl = preferences.getString(KEY_SERVER_URL, "").orEmpty(),
         serverToken = preferences.getString(KEY_SERVER_TOKEN, null)
             ?.let(::decryptToken)
@@ -266,6 +296,8 @@ class AppSettingsRepository(private val context: Context) {
         const val KEY_MATERIAL_YOU = "material_you"
         const val KEY_COLOR_PALETTE = "color_palette"
         const val KEY_YESTERDAY_PROMPT_CUTOFF_HOUR = "yesterday_prompt_cutoff_hour"
+        const val KEY_DREAM_DIARY_ENABLED = "dream_diary_enabled"
+        const val KEY_ACTIVE_ENTRY_KIND = "active_entry_kind"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_SERVER_TOKEN = "server_token"
         const val KEY_SERVER_CONNECTED = "server_connected"

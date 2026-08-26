@@ -66,6 +66,8 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 kotlin {
@@ -108,4 +110,8 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }

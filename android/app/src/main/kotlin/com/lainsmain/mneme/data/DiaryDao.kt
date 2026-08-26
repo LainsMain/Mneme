@@ -42,8 +42,11 @@ interface DiaryDao {
         recaps = recapsForBackup(),
     )
 
-    @Query("SELECT * FROM diary_pages WHERE diaryDate = :diaryDate AND deletedAtEpochMillis IS NULL LIMIT 1")
-    fun observePage(diaryDate: String): Flow<DiaryPageEntity?>
+    @Query(
+        "SELECT * FROM diary_pages WHERE entryKind = :entryKind AND diaryDate = :diaryDate " +
+            "AND deletedAtEpochMillis IS NULL LIMIT 1",
+    )
+    fun observePage(entryKind: String, diaryDate: String): Flow<DiaryPageEntity?>
 
     @Query("SELECT * FROM diary_pages WHERE id = :id LIMIT 1")
     suspend fun pageById(id: String): DiaryPageEntity?
@@ -54,15 +57,19 @@ interface DiaryDao {
     @Query(
         """
         SELECT * FROM diary_pages
-        WHERE deletedAtEpochMillis IS NULL AND plainText LIKE '%' || :query || '%'
+        WHERE entryKind = :entryKind AND deletedAtEpochMillis IS NULL
+            AND plainText LIKE '%' || :query || '%'
         ORDER BY diaryDate DESC
         LIMIT :limit
         """,
     )
-    fun search(query: String, limit: Int = 100): Flow<List<DiaryPageEntity>>
+    fun search(entryKind: String, query: String, limit: Int = 100): Flow<List<DiaryPageEntity>>
 
-    @Query("SELECT diaryDate FROM diary_pages WHERE deletedAtEpochMillis IS NULL ORDER BY diaryDate DESC")
-    fun observeWrittenDates(): Flow<List<String>>
+    @Query(
+        "SELECT diaryDate FROM diary_pages WHERE entryKind = :entryKind " +
+            "AND deletedAtEpochMillis IS NULL ORDER BY diaryDate DESC",
+    )
+    fun observeWrittenDates(entryKind: String): Flow<List<String>>
 
     @Query(
         """
@@ -98,12 +105,12 @@ interface DiaryDao {
                 WHERE attachment.pageId = page.id AND attachment.caption != ''
             ), '') AS photoCaptions
         FROM diary_pages AS page
-        WHERE page.deletedAtEpochMillis IS NULL
+        WHERE page.entryKind = :entryKind AND page.deletedAtEpochMillis IS NULL
             AND page.diaryDate BETWEEN :firstDate AND :lastDate
         ORDER BY page.diaryDate
         """,
     )
-    fun observeMonth(firstDate: String, lastDate: String): Flow<List<MonthDayRow>>
+    fun observeMonth(entryKind: String, firstDate: String, lastDate: String): Flow<List<MonthDayRow>>
 
     @Query(
         """
@@ -136,33 +143,34 @@ interface DiaryDao {
                 WHERE attachment.pageId = page.id AND attachment.caption != ''
             ), '') AS photoCaptions
         FROM diary_pages AS page
-        WHERE page.deletedAtEpochMillis IS NULL
+        WHERE page.entryKind = :entryKind AND page.deletedAtEpochMillis IS NULL
         ORDER BY page.diaryDate DESC
         """,
     )
-    fun observeAllDays(): Flow<List<MonthDayRow>>
+    fun observeAllDays(entryKind: String): Flow<List<MonthDayRow>>
 
     @Query(
         """
         SELECT attachment.*, page.diaryDate AS diaryDate, page.isFavorite AS isFavorite
         FROM attachments AS attachment
         INNER JOIN diary_pages AS page ON page.id = attachment.pageId
-        WHERE page.deletedAtEpochMillis IS NULL
+        WHERE page.entryKind = :entryKind AND page.deletedAtEpochMillis IS NULL
         ORDER BY page.diaryDate, attachment.sortOrder, attachment.createdAtEpochMillis
         """,
     )
-    fun observeAllMedia(): Flow<List<MediaAttachmentRow>>
+    fun observeAllMedia(entryKind: String): Flow<List<MediaAttachmentRow>>
 
     @Query(
         """
         SELECT attachment.*
         FROM attachments AS attachment
         INNER JOIN diary_pages AS page ON page.id = attachment.pageId
-        WHERE page.diaryDate = :diaryDate AND page.deletedAtEpochMillis IS NULL
+        WHERE page.entryKind = :entryKind AND page.diaryDate = :diaryDate
+            AND page.deletedAtEpochMillis IS NULL
         ORDER BY attachment.sortOrder, attachment.createdAtEpochMillis
         """,
     )
-    fun observeAttachments(diaryDate: String): Flow<List<AttachmentEntity>>
+    fun observeAttachments(entryKind: String, diaryDate: String): Flow<List<AttachmentEntity>>
 
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM attachments WHERE pageId = :pageId")
     suspend fun maximumAttachmentOrder(pageId: String): Int

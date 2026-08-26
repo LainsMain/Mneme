@@ -38,7 +38,7 @@ jobs:
         working-directory: server
         run: go test ./...
       - name: Build and test Android
-        run: ./gradlew :android:app:assembleDebug :android:app:testDebugUnitTest :android:app:lintDebug
+        run: ./gradlew :android:app:assembleDebug :android:app:testDebugUnitTest :android:app:compileDebugAndroidTestKotlin :android:app:lintDebug
       - name: Validate Compose
         run: |
           docker compose --env-file .env.example config --quiet

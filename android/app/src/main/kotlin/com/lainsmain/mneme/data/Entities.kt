@@ -7,10 +7,11 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "diary_pages",
-    indices = [Index(value = ["diaryDate"], unique = true)],
+    indices = [Index(value = ["entryKind", "diaryDate"], unique = true)],
 )
 data class DiaryPageEntity(
     @PrimaryKey val id: String,
+    val entryKind: String = EntryKind.Daily.storageValue,
     val diaryDate: String,
     val documentJson: String,
     val plainText: String,

@@ -9,6 +9,7 @@ import com.lainsmain.mneme.data.BackupRepository
 import com.lainsmain.mneme.data.BackupWorker
 import com.lainsmain.mneme.data.UpdateRepository
 import com.lainsmain.mneme.data.DiaryExportRepository
+import com.lainsmain.mneme.data.EntrySessionRepository
 import org.maplibre.android.MapLibre
 import com.lainsmain.mneme.widget.MnemeWidgetUpdater
 
@@ -20,6 +21,7 @@ class MnemeApplication : Application() {
     val backupRepository by lazy { BackupRepository(this, database.diaryDao(), settingsRepository) }
     val updateRepository by lazy { UpdateRepository(this) }
     val exportRepository by lazy { DiaryExportRepository(this, database.diaryDao()) }
+    val entrySessionRepository by lazy { EntrySessionRepository(this) }
 
     override fun onCreate() {
         super.onCreate()

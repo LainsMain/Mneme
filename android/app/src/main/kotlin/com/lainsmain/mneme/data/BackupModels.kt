@@ -16,6 +16,7 @@ data class VaultManifest(
 @Serializable
 data class VaultPage(
     val id: String,
+    val entryKind: String = EntryKind.Daily.storageValue,
     val date: String,
     val document: String,
     val plainText: String,

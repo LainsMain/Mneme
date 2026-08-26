@@ -9,6 +9,8 @@ import com.lainsmain.mneme.data.DiaryRepository
 import com.lainsmain.mneme.data.DaySummary
 import com.lainsmain.mneme.data.DiaryAttachment
 import com.lainsmain.mneme.data.DatedAttachment
+import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.EntrySessionRepository
 import com.lainsmain.mneme.data.MonthlyRecap
 import com.lainsmain.mneme.data.PlaceSearchRepository
 import com.lainsmain.mneme.data.PlaceSuggestion
@@ -29,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 data class DiaryUiState(
+    val entryKind: EntryKind,
     val selectedDate: LocalDate,
     val document: RichTextDocument = RichTextDocument(),
     val isLoading: Boolean = true,
@@ -66,14 +69,23 @@ data class DiaryLocation(
 class DiaryViewModel(
     private val repository: DiaryRepository,
     private val placeSearchRepository: PlaceSearchRepository,
+    private val entryKind: EntryKind,
+    private val sessionRepository: EntrySessionRepository,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) : ViewModel() {
     private val today = LocalDate.now(clock)
+    private val initialDate = sessionRepository.selectedDate(entryKind)
+    private val initialMonth = sessionRepository.visibleMonth(entryKind)
     private val _uiState = MutableStateFlow(
         DiaryUiState(
-            selectedDate = today,
-            visibleMonth = YearMonth.from(today),
-            yesterdaySuggestion = DiaryDate.yesterdaySuggestion(clock),
+            entryKind = entryKind,
+            selectedDate = initialDate,
+            visibleMonth = initialMonth,
+            yesterdaySuggestion = if (entryKind == EntryKind.Daily) {
+                DiaryDate.yesterdaySuggestion(clock)
+            } else {
+                null
+            },
         ),
     )
     val uiState: StateFlow<DiaryUiState> = _uiState.asStateFlow()
@@ -98,8 +110,8 @@ class DiaryViewModel(
     private var currentRecap: MonthlyRecap? = null
 
     init {
-        observeDate(today)
-        observeMonth(YearMonth.from(today))
+        observeDate(initialDate)
+        observeMonth(initialMonth)
         observeAllContent()
         updateYesterdayPromptCutoffHour(6)
     }
@@ -107,6 +119,10 @@ class DiaryViewModel(
     fun updateYesterdayPromptCutoffHour(hour: Int) {
         require(hour in 1..12)
         yesterdayPromptJob?.cancel()
+        if (entryKind == EntryKind.Dream) {
+            _uiState.value = _uiState.value.copy(yesterdaySuggestion = null)
+            return
+        }
         yesterdayPromptJob = viewModelScope.launch {
             while (true) {
                 _uiState.value = _uiState.value.copy(
@@ -139,6 +155,7 @@ class DiaryViewModel(
     }
 
     fun openRecap(month: YearMonth) {
+        if (entryKind != EntryKind.Daily) return
         if (_uiState.value.recapMonth == month) return
         recapSaveJob?.cancel()
         viewModelScope.launch {
@@ -163,6 +180,7 @@ class DiaryViewModel(
     fun nextRecapMonth() = _uiState.value.recapMonth?.let { openRecap(it.plusMonths(1)) }
 
     fun updateRecapDocument(document: RichTextDocument) {
+        if (entryKind != EntryKind.Daily) return
         val month = _uiState.value.recapMonth ?: return
         recapDirty = true
         _uiState.value = _uiState.value.copy(recapDocument = document, recapIsSaving = true)
@@ -176,6 +194,12 @@ class DiaryViewModel(
     fun showMonth(month: YearMonth) {
         if (month == _uiState.value.visibleMonth) return
         observeMonth(month)
+    }
+
+    fun setVisibleMonth(month: YearMonth) {
+        if (month == _uiState.value.visibleMonth) return
+        sessionRepository.setVisibleMonth(entryKind, month)
+        _uiState.value = _uiState.value.copy(visibleMonth = month)
     }
 
     fun selectDate(date: LocalDate) {
@@ -206,6 +230,7 @@ class DiaryViewModel(
             try {
                 saveImmediately()
                 val page = currentPage ?: repository.save(
+                    entryKind = entryKind,
                     date = _uiState.value.selectedDate,
                     existing = null,
                     document = _uiState.value.document,
@@ -310,6 +335,7 @@ class DiaryViewModel(
     }
 
     private fun observeDate(date: LocalDate) {
+        sessionRepository.setSelectedDate(entryKind, date)
         observeJob?.cancel()
         observeAttachmentsJob?.cancel()
         dirty = false
@@ -328,7 +354,7 @@ class DiaryViewModel(
             photoImportFailures = 0,
         )
         observeJob = viewModelScope.launch {
-            repository.observePage(date).collect { page ->
+            repository.observePage(entryKind, date).collect { page ->
                 currentPage = page
                 if (!dirty) {
                     _uiState.value = _uiState.value.copy(
@@ -344,7 +370,7 @@ class DiaryViewModel(
             }
         }
         observeAttachmentsJob = viewModelScope.launch {
-            repository.observeAttachments(date).collect { attachments ->
+            repository.observeAttachments(entryKind, date).collect { attachments ->
                 attachmentsLoaded = true
                 _uiState.value = _uiState.value.copy(
                     attachments = attachments,
@@ -357,18 +383,20 @@ class DiaryViewModel(
 
     private fun observeAllContent() {
         observeAllDaysJob = viewModelScope.launch {
-            repository.observeAllDays().collect { days ->
+            repository.observeAllDays(entryKind).collect { days ->
                 _uiState.value = _uiState.value.copy(allDays = days)
             }
         }
         observeMediaJob = viewModelScope.launch {
-            repository.observeAllMedia().collect { media ->
+            repository.observeAllMedia(entryKind).collect { media ->
                 _uiState.value = _uiState.value.copy(allMedia = media)
             }
         }
-        observeRecapMonthsJob = viewModelScope.launch {
-            repository.observeRecapMonths().collect { months ->
-                _uiState.value = _uiState.value.copy(recapMonths = months)
+        if (entryKind == EntryKind.Daily) {
+            observeRecapMonthsJob = viewModelScope.launch {
+                repository.observeRecapMonths().collect { months ->
+                    _uiState.value = _uiState.value.copy(recapMonths = months)
+                }
             }
         }
     }
@@ -465,10 +493,11 @@ class DiaryViewModel(
     }
 
     private fun observeMonth(month: YearMonth) {
+        sessionRepository.setVisibleMonth(entryKind, month)
         observeMonthJob?.cancel()
         _uiState.value = _uiState.value.copy(visibleMonth = month, monthDays = emptyMap())
         observeMonthJob = viewModelScope.launch {
-            repository.observeMonth(month).collect { days ->
+            repository.observeMonth(entryKind, month).collect { days ->
                 _uiState.value = _uiState.value.copy(monthDays = days)
             }
         }
@@ -501,6 +530,7 @@ class DiaryViewModel(
     private suspend fun pageForMetadata(): DiaryPage {
         saveImmediately()
         return currentPage ?: repository.save(
+            entryKind = entryKind,
             date = _uiState.value.selectedDate,
             existing = null,
             document = _uiState.value.document,
@@ -512,7 +542,7 @@ class DiaryViewModel(
 
     private suspend fun save(date: LocalDate, document: RichTextDocument) {
         if (date != _uiState.value.selectedDate) return
-        val saved = repository.save(date, currentPage, document)
+        val saved = repository.save(entryKind, date, currentPage, document)
         currentPage = saved
         if (_uiState.value.document == document) {
             dirty = false
@@ -523,9 +553,11 @@ class DiaryViewModel(
     class Factory(
         private val repository: DiaryRepository,
         private val placeSearchRepository: PlaceSearchRepository,
+        private val entryKind: EntryKind,
+        private val sessionRepository: EntrySessionRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DiaryViewModel(repository, placeSearchRepository) as T
+            DiaryViewModel(repository, placeSearchRepository, entryKind, sessionRepository) as T
     }
 }
