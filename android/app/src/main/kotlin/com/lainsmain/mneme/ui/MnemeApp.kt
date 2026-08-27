@@ -48,7 +48,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -147,16 +149,21 @@ fun MnemeApp(
     onDownloadUpdate: (ReleaseInfo) -> Unit,
     onInstallDownloadedUpdate: () -> Unit,
 ) {
-    var dailyDestination by rememberSaveable {
-        mutableStateOf(destinationFromStorage(dailyInitialDestination))
+    val destinations = remember {
+        mutableStateMapOf(
+            EntryKind.Daily to destinationFromStorage(dailyInitialDestination),
+            EntryKind.Dream to destinationFromStorage(dreamInitialDestination),
+        )
     }
-    var dreamDestination by rememberSaveable {
-        mutableStateOf(destinationFromStorage(dreamInitialDestination))
-    }
-    val destination = if (state.entryKind == EntryKind.Dream) dreamDestination else dailyDestination
-    fun selectDestination(target: JournalDestination) {
-        if (state.entryKind == EntryKind.Dream) dreamDestination = target else dailyDestination = target
-        onDestinationChanged(state.entryKind, target.name)
+    val destination = destinations.getValue(state.entryKind)
+    val currentEntryKind by rememberUpdatedState(state.entryKind)
+    val currentDestinationChanged by rememberUpdatedState(onDestinationChanged)
+    val selectDestination: (JournalDestination) -> Unit = remember {
+        { target ->
+            val kind = currentEntryKind
+            destinations[kind] = target
+            currentDestinationChanged(kind, target.name)
+        }
     }
     var dailyMediaTodayJumpKey by remember { mutableIntStateOf(0) }
     var dreamMediaTodayJumpKey by remember { mutableIntStateOf(0) }
@@ -173,7 +180,7 @@ fun MnemeApp(
     LaunchedEffect(journalOpenKey) {
         if (journalOpenKey > 0) {
             onEntryKindChange(EntryKind.Daily)
-            dailyDestination = JournalDestination.Journal
+            destinations[EntryKind.Daily] = JournalDestination.Journal
             onDestinationChanged(EntryKind.Daily, JournalDestination.Journal.name)
             showSettings = false
             showSearch = false
@@ -214,11 +221,19 @@ fun MnemeApp(
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Image(
-                                            painter = painterResource(R.drawable.mneme_logo_foreground),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(27.dp),
-                                        )
+                                        if (state.entryKind == EntryKind.Dream) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Bedtime,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(21.dp),
+                                            )
+                                        } else {
+                                            Image(
+                                                painter = painterResource(R.drawable.mneme_logo_foreground),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(27.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -301,7 +316,7 @@ fun MnemeApp(
                     JournalNavigation(
                         selected = destination,
                         entryKind = state.entryKind,
-                        onSelected = ::selectDestination,
+                        onSelected = selectDestination,
                     )
                 }
             }

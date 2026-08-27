@@ -41,7 +41,10 @@ anything leaves the device.
 An optional **Dream diary** can be enabled under Settings → Writing. It uses the
 wake-up date and mirrors the journal's writing, photos, places, favorites, list,
 calendar, media, map, and search without mixing dream content into ordinary
-days. Turning the mode off only hides it; dreams remain backed up and exportable.
+days. Dream mode reshapes whichever palette you chose into a moonlit violet/blue
+variant, so it is always obvious which diary is open without adding another
+theme setting. Turning the mode off only hides it; dreams remain backed up and
+exportable.
 
 ## A diary that feels like yours
 
