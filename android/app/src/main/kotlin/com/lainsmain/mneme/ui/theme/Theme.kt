@@ -3,12 +3,14 @@ package com.lainsmain.mneme.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import com.lainsmain.mneme.data.ThemePreference
 import com.lainsmain.mneme.data.ColorPalette
@@ -49,6 +51,7 @@ fun MnemeTheme(
     mode: ThemePreference = ThemePreference.Dark,
     palette: ColorPalette = ColorPalette.Ocean,
     dynamicColor: Boolean = false,
+    dreamMode: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val dark = when (mode) {
@@ -57,18 +60,59 @@ fun MnemeTheme(
         ThemePreference.System -> isSystemInDarkTheme()
     }
     val context = LocalContext.current
-    val colors = when {
+    val baseColors = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
         dark -> palette.darkColors()
         else -> palette.lightColors()
     }
+    val colors = if (dreamMode) baseColors.dreamVariant(dark) else baseColors
 
     MaterialTheme(
         colorScheme = colors,
         typography = MnemeTypography,
         shapes = MnemeShapes,
         content = content,
+    )
+}
+
+/**
+ * Keeps the selected palette (including Material You) recognizable while shifting Dream mode
+ * toward a quieter moonlit violet/blue atmosphere. The explicit foreground colors preserve
+ * contrast instead of merely placing a translucent purple layer over the normal theme.
+ */
+internal fun ColorScheme.dreamVariant(dark: Boolean): ColorScheme {
+    val dreamPrimary = if (dark) Color(0xFFC8BFFF) else Color(0xFF5B50A0)
+    val dreamSecondary = if (dark) Color(0xFFAFC6FF) else Color(0xFF52658F)
+    val dreamTertiary = if (dark) Color(0xFF9CD8E8) else Color(0xFF356B79)
+    val dreamContainer = if (dark) Color(0xFF3E3563) else Color(0xFFE7E0FF)
+    val dreamSecondaryContainer = if (dark) Color(0xFF293B62) else Color(0xFFDCE5FF)
+    val dreamBackground = if (dark) Color(0xFF101019) else Color(0xFFF9F7FF)
+    val dreamSurface = if (dark) Color(0xFF12121D) else Color(0xFFFAF8FF)
+
+    return copy(
+        primary = lerp(primary, dreamPrimary, 0.62f),
+        onPrimary = if (dark) Color(0xFF28204E) else Color.White,
+        primaryContainer = lerp(primaryContainer, dreamContainer, 0.72f),
+        onPrimaryContainer = if (dark) Color(0xFFE9E3FF) else Color(0xFF21194E),
+        inversePrimary = lerp(inversePrimary, dreamPrimary, 0.56f),
+        secondary = lerp(secondary, dreamSecondary, 0.58f),
+        onSecondary = if (dark) Color(0xFF1E2E50) else Color.White,
+        secondaryContainer = lerp(secondaryContainer, dreamSecondaryContainer, 0.68f),
+        onSecondaryContainer = if (dark) Color(0xFFDCE5FF) else Color(0xFF142548),
+        tertiary = lerp(tertiary, dreamTertiary, 0.52f),
+        background = lerp(background, dreamBackground, if (dark) 0.58f else 0.72f),
+        surface = lerp(surface, dreamSurface, if (dark) 0.58f else 0.72f),
+        surfaceDim = lerp(surfaceDim, dreamBackground, 0.34f),
+        surfaceBright = lerp(surfaceBright, dreamSurface, 0.32f),
+        surfaceContainerLowest = lerp(surfaceContainerLowest, dreamBackground, 0.42f),
+        surfaceContainerLow = lerp(surfaceContainerLow, dreamSurface, 0.40f),
+        surfaceContainer = lerp(surfaceContainer, dreamSurface, 0.36f),
+        surfaceContainerHigh = lerp(surfaceContainerHigh, dreamContainer, 0.20f),
+        surfaceContainerHighest = lerp(surfaceContainerHighest, dreamContainer, 0.24f),
+        surfaceVariant = lerp(surfaceVariant, dreamContainer, 0.22f),
+        outline = lerp(outline, dreamSecondary, 0.18f),
+        outlineVariant = lerp(outlineVariant, dreamContainer, 0.24f),
     )
 }
 

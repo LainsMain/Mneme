@@ -65,10 +65,14 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+            val activeKind = settingsState.settings.activeEntryKind.takeIf {
+                it != EntryKind.Dream || settingsState.settings.dreamDiaryEnabled
+            } ?: EntryKind.Daily
             MnemeTheme(
                 mode = settingsState.settings.theme,
                 palette = settingsState.settings.colorPalette,
                 dynamicColor = settingsState.settings.useMaterialYou,
+                dreamMode = activeKind == EntryKind.Dream,
             ) {
                 var unlocked by remember {
                     mutableStateOf(!settingsState.settings.appLockEnabled)
@@ -104,9 +108,6 @@ class MainActivity : ComponentActivity() {
                 )
                 val dailyState by dailyDiaryViewModel.uiState.collectAsStateWithLifecycle()
                 val dreamState by dreamDiaryViewModel.uiState.collectAsStateWithLifecycle()
-                val activeKind = settingsState.settings.activeEntryKind.takeIf {
-                    it != EntryKind.Dream || settingsState.settings.dreamDiaryEnabled
-                } ?: EntryKind.Daily
                 val diaryViewModel = if (activeKind == EntryKind.Dream) {
                     dreamDiaryViewModel
                 } else {
