@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.5
+
+- Add user-created journal spaces with unique titles, curated Material icons or
+  emoji, independent accent palettes, and a live creation preview.
+- Give every custom journal isolated Journal, List, Month, Media, Map, search,
+  favorites, photos, captions, locations, and monthly recaps.
+- Replace the fixed Journal/Dream selector with a scalable journal switcher and
+  preserve each journal's date, month, and destination independently.
+- Add journal reordering, archiving, restoring, and title-confirmed permanent
+  deletion with attachment cleanup and immediate backup scheduling.
+- Migrate Room to schema v5 while retaining the physical legacy page namespace
+  column for safe upgrades from existing Journal and Dream installations.
+- Upgrade encrypted backups to `mneme-vault-v3` and portable ZIP exports to v4,
+  including empty and archived journal definitions while retaining v2 restore
+  compatibility.
+
+## 0.3.4
+
+- Fix navigation state races when switching between Journal and Dreams.
+- Give Dream mode a derived moonlit version of the selected global theme.
+
+## 0.3.3
+
+- Add the optional Dream diary with wake-up-date pages and fully scoped list,
+  month, media, map, search, favorites, photos, locations, backup, and export.
+
 ## 0.2.0
 
 - Keep the rich-text formatting bar above the complete Android keyboard,

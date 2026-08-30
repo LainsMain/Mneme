@@ -3,7 +3,6 @@ package com.lainsmain.mneme.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,14 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Today
-import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,8 +39,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,7 +56,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -67,7 +64,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lainsmain.mneme.ui.calendar.MonthScreen
-import com.lainsmain.mneme.R
 import com.lainsmain.mneme.ui.diary.DiaryScreen
 import com.lainsmain.mneme.ui.diary.DiaryUiState
 import com.lainsmain.mneme.ui.list.EntryListScreen
@@ -79,7 +75,11 @@ import com.lainsmain.mneme.data.ThemePreference
 import com.lainsmain.mneme.data.ReleaseInfo
 import com.lainsmain.mneme.data.ColorPalette
 import com.lainsmain.mneme.data.RemoteManifestPointer
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalId
+import com.lainsmain.mneme.data.JournalRole
+import com.lainsmain.mneme.data.JournalContentCounts
+import com.lainsmain.mneme.data.JournalIcon
 import com.lainsmain.mneme.ui.settings.SettingsScreen
 import com.lainsmain.mneme.ui.settings.SettingsUiState
 import java.time.LocalDate
@@ -98,11 +98,10 @@ private enum class JournalDestination(val label: String) {
 fun MnemeApp(
     state: DiaryUiState,
     journalOpenKey: Int,
-    dreamDiaryEnabled: Boolean,
-    dailyInitialDestination: String,
-    dreamInitialDestination: String,
-    onEntryKindChange: (EntryKind) -> Unit,
-    onDestinationChanged: (EntryKind, String) -> Unit,
+    journals: List<JournalDefinition>,
+    initialDestination: String,
+    onJournalChange: (JournalId) -> Unit,
+    onDestinationChanged: (JournalId, String) -> Unit,
     onPreviousDay: () -> Unit,
     onNextDay: () -> Unit,
     onToday: () -> Unit,
@@ -134,6 +133,12 @@ fun MnemeApp(
     onColorPaletteChange: (ColorPalette) -> Unit,
     onYesterdayPromptCutoffHourChange: (Int) -> Unit,
     onDreamDiaryEnabledChange: (Boolean) -> Unit,
+    onCreateJournal: (String, JournalIcon, ColorPalette, (JournalDefinition) -> Unit) -> Unit,
+    onUpdateJournal: (String, JournalIcon, ColorPalette, JournalId, () -> Unit) -> Unit,
+    onReorderJournals: (List<JournalId>) -> Unit,
+    onSetJournalArchived: (JournalId, Boolean) -> Unit,
+    onLoadJournalCounts: (JournalId, (JournalContentCounts) -> Unit) -> Unit,
+    onDeleteJournal: (JournalId, String) -> Unit,
     onSavePin: (String) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
     onBiometricChange: (Boolean) -> Unit,
@@ -149,45 +154,39 @@ fun MnemeApp(
     onDownloadUpdate: (ReleaseInfo) -> Unit,
     onInstallDownloadedUpdate: () -> Unit,
 ) {
-    val destinations = remember {
-        mutableStateMapOf(
-            EntryKind.Daily to destinationFromStorage(dailyInitialDestination),
-            EntryKind.Dream to destinationFromStorage(dreamInitialDestination),
-        )
-    }
-    val destination = destinations.getValue(state.entryKind)
-    val currentEntryKind by rememberUpdatedState(state.entryKind)
+    val destinations = remember { mutableStateMapOf<String, JournalDestination>() }
+    val journalKey = state.journal.id.storageValue
+    val destination = destinations.getOrPut(journalKey) { destinationFromStorage(initialDestination) }
+    val currentJournalId by rememberUpdatedState(state.journal.id)
     val currentDestinationChanged by rememberUpdatedState(onDestinationChanged)
     val selectDestination: (JournalDestination) -> Unit = remember {
         { target ->
-            val kind = currentEntryKind
-            destinations[kind] = target
-            currentDestinationChanged(kind, target.name)
+            val journalId = currentJournalId
+            destinations[journalId.storageValue] = target
+            currentDestinationChanged(journalId, target.name)
         }
     }
-    var dailyMediaTodayJumpKey by remember { mutableIntStateOf(0) }
-    var dreamMediaTodayJumpKey by remember { mutableIntStateOf(0) }
-    val mediaTodayJumpKey = if (state.entryKind == EntryKind.Dream) {
-        dreamMediaTodayJumpKey
-    } else {
-        dailyMediaTodayJumpKey
-    }
+    val mediaTodayJumpKeys = remember { mutableStateMapOf<String, Int>() }
+    val mediaTodayJumpKey = mediaTodayJumpKeys[journalKey] ?: 0
     var showSettings by remember { mutableStateOf(false) }
+    var journalSettingsStart by remember { mutableStateOf<String?>(null) }
     var showSearch by remember { mutableStateOf(false) }
+    var showJournalSwitcher by remember { mutableStateOf(false) }
     var dismissedUpdateTag by rememberSaveable { mutableStateOf<String?>(null) }
     var dismissedRecoveryReminder by rememberSaveable { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     LaunchedEffect(journalOpenKey) {
         if (journalOpenKey > 0) {
-            onEntryKindChange(EntryKind.Daily)
-            destinations[EntryKind.Daily] = JournalDestination.Journal
-            onDestinationChanged(EntryKind.Daily, JournalDestination.Journal.name)
+            onJournalChange(JournalId.PRIMARY)
+            destinations[JournalId.PRIMARY.storageValue] = JournalDestination.Journal
+            onDestinationChanged(JournalId.PRIMARY, JournalDestination.Journal.name)
             showSettings = false
             showSearch = false
         }
     }
     BackHandler(enabled = showSettings || showSearch || state.recapMonth != null) {
         when {
+            showSettings && journalSettingsStart != null -> journalSettingsStart = null
             showSettings -> showSettings = false
             showSearch -> showSearch = false
             state.recapMonth != null -> onCloseRecap()
@@ -221,34 +220,24 @@ fun MnemeApp(
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        if (state.entryKind == EntryKind.Dream) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Bedtime,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(21.dp),
-                                            )
-                                        } else {
-                                            Image(
-                                                painter = painterResource(R.drawable.mneme_logo_foreground),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(27.dp),
-                                            )
-                                        }
+                                        JournalIconView(state.journal, Modifier.size(21.dp))
                                     }
                                 }
                             }
                             if (
-                                dreamDiaryEnabled && !showSettings && !showSearch &&
+                                journals.size > 1 && !showSettings && !showSearch &&
                                 state.recapMonth == null
                             ) {
-                                EntryModeSelector(
-                                    selected = state.entryKind,
-                                    onSelected = onEntryKindChange,
-                                )
+                                JournalTitleSelector(state.journal) { showJournalSwitcher = true }
                             } else {
                                 Text(
                                     text = when {
-                                        showSettings -> "Settings"
+                                        showSettings -> when (journalSettingsStart) {
+                                            "create" -> "New journal"
+                                            "edit" -> "Edit journal"
+                                            "manage" -> "Manage journals"
+                                            else -> "Settings"
+                                        }
                                         showSearch -> "Search"
                                         state.recapMonth != null -> "Monthly recap"
                                         else -> "Mneme"
@@ -263,6 +252,7 @@ fun MnemeApp(
                         if (showSettings || showSearch || state.recapMonth != null) {
                             IconButton(onClick = {
                                 when {
+                                    showSettings && journalSettingsStart != null -> journalSettingsStart = null
                                     showSettings -> showSettings = false
                                     showSearch -> showSearch = false
                                     else -> onCloseRecap()
@@ -281,11 +271,7 @@ fun MnemeApp(
                                 onClick = {
                                     when (destination) {
                                         JournalDestination.Calendar -> onCurrentMonth()
-                                        JournalDestination.Media -> if (state.entryKind == EntryKind.Dream) {
-                                            dreamMediaTodayJumpKey++
-                                        } else {
-                                            dailyMediaTodayJumpKey++
-                                        }
+                                        JournalDestination.Media -> mediaTodayJumpKeys[journalKey] = mediaTodayJumpKey + 1
                                         else -> onToday()
                                     }
                                 },
@@ -296,14 +282,17 @@ fun MnemeApp(
                             IconButton(onClick = { showSearch = true }) {
                                 Icon(
                                     Icons.Rounded.Search,
-                                    contentDescription = if (state.entryKind == EntryKind.Dream) {
+                                    contentDescription = if (state.journal.role == JournalRole.Dream) {
                                         "Search dreams"
                                     } else {
                                         "Search journal"
                                     },
                                 )
                             }
-                            IconButton(onClick = { showSettings = true }) {
+                            IconButton(onClick = {
+                                journalSettingsStart = null
+                                showSettings = true
+                            }) {
                                 Icon(Icons.Rounded.Settings, contentDescription = "Settings")
                             }
                         }
@@ -315,7 +304,7 @@ fun MnemeApp(
                 if (!showSettings && !showSearch && state.recapMonth == null) {
                     JournalNavigation(
                         selected = destination,
-                        entryKind = state.entryKind,
+                        journal = state.journal,
                         onSelected = selectDestination,
                     )
                 }
@@ -337,7 +326,7 @@ fun MnemeApp(
                     .consumeWindowInsets(contentPadding),
             )
         } else AnimatedContent(
-            targetState = state.entryKind to Triple(showSettings, showSearch, destination),
+            targetState = journalKey to Triple(showSettings, showSearch, destination),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
@@ -348,11 +337,23 @@ fun MnemeApp(
             if (settingsVisible) {
                 SettingsScreen(
                     state = settingsState,
+                    journalStartPage = journalSettingsStart,
+                    onJournalPageChange = { journalSettingsStart = it },
                     onThemeChange = onThemeChange,
                     onMaterialYouChange = onMaterialYouChange,
                     onColorPaletteChange = onColorPaletteChange,
                     onYesterdayPromptCutoffHourChange = onYesterdayPromptCutoffHourChange,
                     onDreamDiaryEnabledChange = onDreamDiaryEnabledChange,
+                    onCreateJournal = onCreateJournal,
+                    onUpdateJournal = onUpdateJournal,
+                    onReorderJournals = onReorderJournals,
+                    onSetJournalArchived = onSetJournalArchived,
+                    onLoadJournalCounts = onLoadJournalCounts,
+                    onDeleteJournal = onDeleteJournal,
+                    onOpenJournal = { journalId ->
+                        showSettings = false
+                        onJournalChange(journalId)
+                    },
                     onSavePin = onSavePin,
                     onAppLockChange = onAppLockChange,
                     onBiometricChange = onBiometricChange,
@@ -399,7 +400,7 @@ fun MnemeApp(
 
                 JournalDestination.List -> EntryListScreen(
                     entries = state.allDays,
-                    entryKind = state.entryKind,
+                    journal = state.journal,
                     onOpenDay = { date ->
                         onSelectDate(date)
                         selectDestination(JournalDestination.Journal)
@@ -417,13 +418,13 @@ fun MnemeApp(
                     },
                     recapMonths = state.recapMonths,
                     onOpenRecap = onOpenRecap,
-                    showMonthlyRecaps = state.entryKind == EntryKind.Daily,
+                    showMonthlyRecaps = state.journal.supportsMonthlyRecaps,
                     onVisibleMonthChange = onVisibleMonthChange,
                 )
 
                 JournalDestination.Media -> MediaScreen(
                     media = state.allMedia,
-                    entryKind = state.entryKind,
+                    journal = state.journal,
                     todayJumpKey = mediaTodayJumpKey,
                     onMakePrimary = onMakePhotoPrimary,
                     onDelete = onDeletePhoto,
@@ -432,13 +433,64 @@ fun MnemeApp(
 
                 JournalDestination.Map -> MapScreen(
                     entries = state.allDays,
-                    entryKind = state.entryKind,
+                    journal = state.journal,
                     onOpenDay = { date ->
                         onSelectDate(date)
                         selectDestination(JournalDestination.Journal)
                     },
                 )
             }
+        }
+    }
+
+    if (showJournalSwitcher) {
+        ModalBottomSheet(onDismissRequest = { showJournalSwitcher = false }) {
+            Text(
+                "Switch journal",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+            journals.forEach { journal ->
+                ListItem(
+                    headlineContent = { Text(journal.title) },
+                    leadingContent = {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = journal.switcherColor().copy(alpha = 0.24f),
+                            contentColor = journal.switcherColor(),
+                        ) { JournalIconView(journal, Modifier.padding(10.dp).size(22.dp)) }
+                    },
+                    trailingContent = {
+                        if (journal.id == state.journal.id) {
+                            Icon(Icons.Rounded.Check, contentDescription = "Selected")
+                        }
+                    },
+                    modifier = Modifier.clickable {
+                        showJournalSwitcher = false
+                        onJournalChange(journal.id)
+                    },
+                )
+            }
+            ListItem(
+                headlineContent = { Text("New journal") },
+                leadingContent = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                modifier = Modifier.clickable {
+                    showJournalSwitcher = false
+                    journalSettingsStart = "create"
+                    showSettings = true
+                },
+            )
+            ListItem(
+                headlineContent = { Text("Manage journals") },
+                leadingContent = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                modifier = Modifier.clickable {
+                    showJournalSwitcher = false
+                    journalSettingsStart = "manage"
+                    showSettings = true
+                },
+            )
+            Box(Modifier.height(24.dp))
         }
     }
 
@@ -509,46 +561,33 @@ fun MnemeApp(
 private fun destinationFromStorage(value: String): JournalDestination =
     JournalDestination.entries.firstOrNull { it.name == value } ?: JournalDestination.Journal
 
+private fun JournalDefinition.switcherColor(): Color = when {
+    role == JournalRole.Dream -> Color(0xFF8B7BD0)
+    accentPalette == ColorPalette.Ocean -> Color(0xFF39A7C8)
+    accentPalette == ColorPalette.Forest -> Color(0xFF65A367)
+    accentPalette == ColorPalette.Lavender -> Color(0xFF8B75BD)
+    accentPalette == ColorPalette.Rose -> Color(0xFFC66B82)
+    accentPalette == ColorPalette.Amber -> Color(0xFFD68A22)
+    accentPalette == ColorPalette.Graphite -> Color(0xFF77737A)
+    else -> Color(0xFF8A6A55)
+}
+
 @Composable
-private fun EntryModeSelector(
-    selected: EntryKind,
-    onSelected: (EntryKind) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { expanded = true }) {
-            Text(
-                if (selected == EntryKind.Dream) "Dreams" else "Journal",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Switch diary")
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text("Journal") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null) },
-                onClick = {
-                    expanded = false
-                    onSelected(EntryKind.Daily)
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Dreams") },
-                leadingIcon = { Icon(Icons.Rounded.Bedtime, contentDescription = null) },
-                onClick = {
-                    expanded = false
-                    onSelected(EntryKind.Dream)
-                },
-            )
-        }
+private fun JournalTitleSelector(journal: JournalDefinition, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            journal.title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text("  ▾", style = MaterialTheme.typography.titleMedium)
     }
 }
 
 @Composable
 private fun JournalNavigation(
     selected: JournalDestination,
-    entryKind: EntryKind,
+    journal: JournalDefinition,
     onSelected: (JournalDestination) -> Unit,
 ) {
     Surface(
@@ -577,7 +616,7 @@ private fun JournalNavigation(
                 ) {
                     Text(
                         text = if (
-                            destination == JournalDestination.Journal && entryKind == EntryKind.Dream
+                            destination == JournalDestination.Journal && journal.role == JournalRole.Dream
                         ) "Dream" else destination.label,
                         color = labelColor,
                         fontSize = 13.sp,

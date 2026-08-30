@@ -8,28 +8,28 @@ import java.time.YearMonth
 class EntrySessionRepository(context: Context) {
     private val preferences = context.getSharedPreferences("mneme_entry_sessions", Context.MODE_PRIVATE)
 
-    fun selectedDate(kind: EntryKind): LocalDate = preferences.getString(key(kind, "date"), null)
+    fun selectedDate(journalId: JournalId): LocalDate = preferences.getString(key(journalId, "date"), null)
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         ?: LocalDate.now()
 
-    fun visibleMonth(kind: EntryKind): YearMonth = preferences.getString(key(kind, "month"), null)
+    fun visibleMonth(journalId: JournalId): YearMonth = preferences.getString(key(journalId, "month"), null)
         ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
         ?: YearMonth.now()
 
-    fun destination(kind: EntryKind): String =
-        preferences.getString(key(kind, "destination"), "Journal").orEmpty()
+    fun destination(journalId: JournalId): String =
+        preferences.getString(key(journalId, "destination"), "Journal").orEmpty()
 
-    fun setSelectedDate(kind: EntryKind, date: LocalDate) {
-        preferences.edit().putString(key(kind, "date"), date.toString()).apply()
+    fun setSelectedDate(journalId: JournalId, date: LocalDate) {
+        preferences.edit().putString(key(journalId, "date"), date.toString()).apply()
     }
 
-    fun setVisibleMonth(kind: EntryKind, month: YearMonth) {
-        preferences.edit().putString(key(kind, "month"), month.toString()).apply()
+    fun setVisibleMonth(journalId: JournalId, month: YearMonth) {
+        preferences.edit().putString(key(journalId, "month"), month.toString()).apply()
     }
 
-    fun setDestination(kind: EntryKind, destination: String) {
-        preferences.edit().putString(key(kind, "destination"), destination).apply()
+    fun setDestination(journalId: JournalId, destination: String) {
+        preferences.edit().putString(key(journalId, "destination"), destination).apply()
     }
 
-    private fun key(kind: EntryKind, suffix: String) = "${kind.storageValue}_$suffix"
+    private fun key(journalId: JournalId, suffix: String) = "${journalId.storageValue}_$suffix"
 }

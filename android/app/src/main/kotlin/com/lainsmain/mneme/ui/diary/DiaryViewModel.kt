@@ -9,7 +9,7 @@ import com.lainsmain.mneme.data.DiaryRepository
 import com.lainsmain.mneme.data.DaySummary
 import com.lainsmain.mneme.data.DiaryAttachment
 import com.lainsmain.mneme.data.DatedAttachment
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalDefinition
 import com.lainsmain.mneme.data.EntrySessionRepository
 import com.lainsmain.mneme.data.MonthlyRecap
 import com.lainsmain.mneme.data.PlaceSearchRepository
@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 data class DiaryUiState(
-    val entryKind: EntryKind,
+    val journal: JournalDefinition,
     val selectedDate: LocalDate,
     val document: RichTextDocument = RichTextDocument(),
     val isLoading: Boolean = true,
@@ -69,19 +69,19 @@ data class DiaryLocation(
 class DiaryViewModel(
     private val repository: DiaryRepository,
     private val placeSearchRepository: PlaceSearchRepository,
-    private val entryKind: EntryKind,
+    private val journal: JournalDefinition,
     private val sessionRepository: EntrySessionRepository,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) : ViewModel() {
     private val today = LocalDate.now(clock)
-    private val initialDate = sessionRepository.selectedDate(entryKind)
-    private val initialMonth = sessionRepository.visibleMonth(entryKind)
+    private val initialDate = sessionRepository.selectedDate(journal.id)
+    private val initialMonth = sessionRepository.visibleMonth(journal.id)
     private val _uiState = MutableStateFlow(
         DiaryUiState(
-            entryKind = entryKind,
+            journal = journal,
             selectedDate = initialDate,
             visibleMonth = initialMonth,
-            yesterdaySuggestion = if (entryKind == EntryKind.Daily) {
+            yesterdaySuggestion = if (journal.supportsYesterdayPrompt) {
                 DiaryDate.yesterdaySuggestion(clock)
             } else {
                 null
@@ -119,7 +119,7 @@ class DiaryViewModel(
     fun updateYesterdayPromptCutoffHour(hour: Int) {
         require(hour in 1..12)
         yesterdayPromptJob?.cancel()
-        if (entryKind == EntryKind.Dream) {
+        if (!journal.supportsYesterdayPrompt) {
             _uiState.value = _uiState.value.copy(yesterdaySuggestion = null)
             return
         }
@@ -155,7 +155,7 @@ class DiaryViewModel(
     }
 
     fun openRecap(month: YearMonth) {
-        if (entryKind != EntryKind.Daily) return
+        if (!journal.supportsMonthlyRecaps) return
         if (_uiState.value.recapMonth == month) return
         recapSaveJob?.cancel()
         viewModelScope.launch {
@@ -180,7 +180,7 @@ class DiaryViewModel(
     fun nextRecapMonth() = _uiState.value.recapMonth?.let { openRecap(it.plusMonths(1)) }
 
     fun updateRecapDocument(document: RichTextDocument) {
-        if (entryKind != EntryKind.Daily) return
+        if (!journal.supportsMonthlyRecaps) return
         val month = _uiState.value.recapMonth ?: return
         recapDirty = true
         _uiState.value = _uiState.value.copy(recapDocument = document, recapIsSaving = true)
@@ -198,7 +198,7 @@ class DiaryViewModel(
 
     fun setVisibleMonth(month: YearMonth) {
         if (month == _uiState.value.visibleMonth) return
-        sessionRepository.setVisibleMonth(entryKind, month)
+        sessionRepository.setVisibleMonth(journal.id, month)
         _uiState.value = _uiState.value.copy(visibleMonth = month)
     }
 
@@ -230,12 +230,12 @@ class DiaryViewModel(
             try {
                 saveImmediately()
                 val page = currentPage ?: repository.save(
-                    entryKind = entryKind,
+                    journalId = journal.id,
                     date = _uiState.value.selectedDate,
                     existing = null,
                     document = _uiState.value.document,
                 ).also { currentPage = it }
-                val result = repository.importPhotos(page.id, uris)
+                val result = repository.importPhotos(journal.id, page.id, uris)
                 _uiState.value = _uiState.value.copy(photoImportFailures = result.failed)
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -248,15 +248,15 @@ class DiaryViewModel(
     }
 
     fun makePhotoPrimary(attachmentId: String) {
-        viewModelScope.launch { repository.makePhotoPrimary(attachmentId) }
+        viewModelScope.launch { repository.makePhotoPrimary(journal.id, attachmentId) }
     }
 
     fun deletePhoto(attachmentId: String) {
-        viewModelScope.launch { repository.deletePhoto(attachmentId) }
+        viewModelScope.launch { repository.deletePhoto(journal.id, attachmentId) }
     }
 
     fun setPhotoCaption(attachmentId: String, caption: String) {
-        viewModelScope.launch { repository.setPhotoCaption(attachmentId, caption) }
+        viewModelScope.launch { repository.setPhotoCaption(journal.id, attachmentId, caption) }
     }
 
     fun toggleFavorite() {
@@ -264,7 +264,7 @@ class DiaryViewModel(
             val page = pageForMetadata()
             val favorite = !_uiState.value.isFavorite
             _uiState.value = _uiState.value.copy(isFavorite = favorite)
-            repository.setFavorite(page.id, favorite)
+            repository.setFavorite(journal.id, page.id, favorite)
             currentPage = page.copy(isFavorite = favorite)
         }
     }
@@ -283,7 +283,7 @@ class DiaryViewModel(
                 }
             }
             val page = pageForMetadata()
-            repository.setManualLocation(page.id, resolvedName, latitude, longitude)
+            repository.setManualLocation(journal.id, page.id, resolvedName, latitude, longitude)
         }
     }
 
@@ -293,7 +293,7 @@ class DiaryViewModel(
 
     fun usePrimaryPhotoLocation() {
         currentPage?.let { page ->
-            viewModelScope.launch { repository.usePrimaryPhotoLocation(page.id) }
+            viewModelScope.launch { repository.usePrimaryPhotoLocation(journal.id, page.id) }
         }
     }
 
@@ -335,7 +335,7 @@ class DiaryViewModel(
     }
 
     private fun observeDate(date: LocalDate) {
-        sessionRepository.setSelectedDate(entryKind, date)
+        sessionRepository.setSelectedDate(journal.id, date)
         observeJob?.cancel()
         observeAttachmentsJob?.cancel()
         dirty = false
@@ -354,7 +354,7 @@ class DiaryViewModel(
             photoImportFailures = 0,
         )
         observeJob = viewModelScope.launch {
-            repository.observePage(entryKind, date).collect { page ->
+            repository.observePage(journal.id, date).collect { page ->
                 currentPage = page
                 if (!dirty) {
                     _uiState.value = _uiState.value.copy(
@@ -370,7 +370,7 @@ class DiaryViewModel(
             }
         }
         observeAttachmentsJob = viewModelScope.launch {
-            repository.observeAttachments(entryKind, date).collect { attachments ->
+            repository.observeAttachments(journal.id, date).collect { attachments ->
                 attachmentsLoaded = true
                 _uiState.value = _uiState.value.copy(
                     attachments = attachments,
@@ -383,18 +383,18 @@ class DiaryViewModel(
 
     private fun observeAllContent() {
         observeAllDaysJob = viewModelScope.launch {
-            repository.observeAllDays(entryKind).collect { days ->
+            repository.observeAllDays(journal.id).collect { days ->
                 _uiState.value = _uiState.value.copy(allDays = days)
             }
         }
         observeMediaJob = viewModelScope.launch {
-            repository.observeAllMedia(entryKind).collect { media ->
+            repository.observeAllMedia(journal.id).collect { media ->
                 _uiState.value = _uiState.value.copy(allMedia = media)
             }
         }
-        if (entryKind == EntryKind.Daily) {
+        if (journal.supportsMonthlyRecaps) {
             observeRecapMonthsJob = viewModelScope.launch {
-                repository.observeRecapMonths().collect { months ->
+                repository.observeRecapMonths(journal.id).collect { months ->
                     _uiState.value = _uiState.value.copy(recapMonths = months)
                 }
             }
@@ -413,7 +413,7 @@ class DiaryViewModel(
             recapSavedRevision = 0,
         )
         observeRecapJob = viewModelScope.launch {
-            repository.observeRecap(month).collect { recap ->
+            repository.observeRecap(journal.id, month).collect { recap ->
                 currentRecap = recap
                 if (!recapDirty) {
                     _uiState.value = _uiState.value.copy(
@@ -469,7 +469,7 @@ class DiaryViewModel(
             automaticLocationJob?.cancel()
             if (page.locationName != null) {
                 automaticLocationJob = viewModelScope.launch {
-                    repository.setAutomaticLocationName(page.id, null)
+                    repository.setAutomaticLocationName(journal.id, page.id, null)
                 }
             }
             return
@@ -487,17 +487,17 @@ class DiaryViewModel(
                 Locale.getDefault().language,
             ).getOrNull()?.name
             if (automaticLocationKey == key && currentPage?.locationIsManual != true) {
-                repository.setAutomaticLocationName(page.id, resolvedName)
+                repository.setAutomaticLocationName(journal.id, page.id, resolvedName)
             }
         }
     }
 
     private fun observeMonth(month: YearMonth) {
-        sessionRepository.setVisibleMonth(entryKind, month)
+        sessionRepository.setVisibleMonth(journal.id, month)
         observeMonthJob?.cancel()
         _uiState.value = _uiState.value.copy(visibleMonth = month, monthDays = emptyMap())
         observeMonthJob = viewModelScope.launch {
-            repository.observeMonth(entryKind, month).collect { days ->
+            repository.observeMonth(journal.id, month).collect { days ->
                 _uiState.value = _uiState.value.copy(monthDays = days)
             }
         }
@@ -516,7 +516,7 @@ class DiaryViewModel(
 
     private suspend fun saveRecap(month: YearMonth, document: RichTextDocument) {
         if (month != _uiState.value.recapMonth) return
-        val saved = repository.saveRecap(month, currentRecap, document)
+        val saved = repository.saveRecap(journal.id, month, currentRecap, document)
         currentRecap = saved
         if (_uiState.value.recapDocument == document) {
             recapDirty = false
@@ -530,7 +530,7 @@ class DiaryViewModel(
     private suspend fun pageForMetadata(): DiaryPage {
         saveImmediately()
         return currentPage ?: repository.save(
-            entryKind = entryKind,
+            journalId = journal.id,
             date = _uiState.value.selectedDate,
             existing = null,
             document = _uiState.value.document,
@@ -542,7 +542,7 @@ class DiaryViewModel(
 
     private suspend fun save(date: LocalDate, document: RichTextDocument) {
         if (date != _uiState.value.selectedDate) return
-        val saved = repository.save(entryKind, date, currentPage, document)
+        val saved = repository.save(journal.id, date, currentPage, document)
         currentPage = saved
         if (_uiState.value.document == document) {
             dirty = false
@@ -553,11 +553,11 @@ class DiaryViewModel(
     class Factory(
         private val repository: DiaryRepository,
         private val placeSearchRepository: PlaceSearchRepository,
-        private val entryKind: EntryKind,
+        private val journal: JournalDefinition,
         private val sessionRepository: EntrySessionRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DiaryViewModel(repository, placeSearchRepository, entryKind, sessionRepository) as T
+            DiaryViewModel(repository, placeSearchRepository, journal, sessionRepository) as T
     }
 }

@@ -12,7 +12,7 @@ import android.widget.RemoteViews
 import com.lainsmain.mneme.MainActivity
 import com.lainsmain.mneme.MnemeApplication
 import com.lainsmain.mneme.R
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalId
 import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -54,7 +54,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 val snapshot = application.database.diaryDao().exportSnapshot()
                 val today = LocalDate.now()
                 val page = snapshot.pages.firstOrNull {
-                    it.entryKind == EntryKind.Daily.storageValue && it.diaryDate == today.toString()
+                    it.journalId == JournalId.PRIMARY.storageValue && it.diaryDate == today.toString()
                 }
                 val photoCount = page?.let { selected ->
                     snapshot.attachments.count { it.pageId == selected.id }
@@ -101,7 +101,7 @@ class FavoriteWidgetProvider : AppWidgetProvider() {
                 val favorite = snapshot.pages
                     .asSequence()
                     .filter {
-                        it.entryKind == EntryKind.Daily.storageValue &&
+                        it.journalId == JournalId.PRIMARY.storageValue &&
                             it.deletedAtEpochMillis == null && it.isFavorite
                     }
                     .maxByOrNull { it.diaryDate }

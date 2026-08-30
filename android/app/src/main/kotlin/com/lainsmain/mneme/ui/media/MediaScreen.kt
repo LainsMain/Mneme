@@ -46,19 +46,20 @@ import com.lainsmain.mneme.ui.photo.rememberFileBitmap
 import com.lainsmain.mneme.ui.FavoriteGold
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalRole
 
 @Composable
 fun MediaScreen(
     media: List<DatedAttachment>,
-    entryKind: EntryKind,
+    journal: JournalDefinition,
     todayJumpKey: Int,
     onMakePrimary: (String) -> Unit,
     onDelete: (String) -> Unit,
     onSetCaption: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedId by remember(entryKind) { mutableStateOf<String?>(null) }
+    var selectedId by remember(journal.id.storageValue) { mutableStateOf<String?>(null) }
     val orderedMedia = remember(media) { media.sortedBy { it.date } }
     val gridState = rememberLazyGridState()
     val locale = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
@@ -92,10 +93,10 @@ fun MediaScreen(
                 modifier = Modifier.padding(top = 16.dp),
             )
             Text(
-                if (entryKind == EntryKind.Dream) {
+                if (journal.role == JournalRole.Dream) {
                     "Photos added to dreams will collect here."
                 } else {
-                    "Photos added to journal entries will collect here."
+                    "Photos added to ${journal.title.lowercase()} entries will collect here."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

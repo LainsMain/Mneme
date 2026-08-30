@@ -8,15 +8,32 @@ data class VaultManifest(
     val deviceId: String,
     val revision: Long,
     val createdAtEpochMillis: Long,
+    val journals: List<VaultJournal> = emptyList(),
     val pages: List<VaultPage>,
     val attachments: List<VaultAttachment>,
     val monthlyRecaps: List<VaultMonthlyRecap> = emptyList(),
 )
 
 @Serializable
+data class VaultJournal(
+    val id: String,
+    val role: String,
+    val title: String,
+    val iconKind: String,
+    val iconValue: String,
+    val accentPalette: String? = null,
+    val sortOrder: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val archivedAtEpochMillis: Long? = null,
+)
+
+@Serializable
 data class VaultPage(
     val id: String,
-    val entryKind: String = EntryKind.Daily.storageValue,
+    /** v2 compatibility; omitted by new v3 writers. */
+    val entryKind: String = JournalId.PRIMARY.storageValue,
+    val journalId: String? = null,
     val date: String,
     val document: String,
     val plainText: String,
@@ -62,6 +79,7 @@ data class VaultAttachment(
 @Serializable
 data class VaultMonthlyRecap(
     val id: String,
+    val journalId: String = JournalId.PRIMARY.storageValue,
     val yearMonth: String,
     val document: String,
     val plainText: String,

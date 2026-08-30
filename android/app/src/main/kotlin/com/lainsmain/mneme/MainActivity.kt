@@ -43,7 +43,9 @@ import java.time.LocalDate
 import com.lainsmain.mneme.widget.ACTION_OPEN_DIARY_DATE
 import com.lainsmain.mneme.widget.EXTRA_DIARY_DATE
 import com.lainsmain.mneme.widget.MnemeWidgetUpdater
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalId
+import com.lainsmain.mneme.data.JournalRole
 
 class MainActivity : ComponentActivity() {
     private var requestedWidgetDate by mutableStateOf<LocalDate?>(null)
@@ -62,17 +64,26 @@ class MainActivity : ComponentActivity() {
                     application.backupRepository,
                     application.updateRepository,
                     application.exportRepository,
+                    application.journalRepository,
                 ),
             )
             val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
-            val activeKind = settingsState.settings.activeEntryKind.takeIf {
-                it != EntryKind.Dream || settingsState.settings.dreamDiaryEnabled
-            } ?: EntryKind.Daily
+            val visibleJournals = settingsState.journals.filter {
+                !it.isArchived && (it.role != JournalRole.Dream || settingsState.settings.dreamDiaryEnabled)
+            }.ifEmpty { listOf(JournalDefinition.Primary) }
+            val activeJournal = visibleJournals.firstOrNull {
+                it.id == settingsState.settings.activeJournalId
+            } ?: visibleJournals.firstOrNull { it.id == JournalId.PRIMARY } ?: JournalDefinition.Primary
+            LaunchedEffect(activeJournal.id, settingsState.settings.activeJournalId) {
+                if (activeJournal.id != settingsState.settings.activeJournalId) {
+                    settingsViewModel.setActiveJournalId(activeJournal.id)
+                }
+            }
             MnemeTheme(
                 mode = settingsState.settings.theme,
                 palette = settingsState.settings.colorPalette,
                 dynamicColor = settingsState.settings.useMaterialYou,
-                dreamMode = activeKind == EntryKind.Dream,
+                journal = activeJournal,
             ) {
                 var unlocked by remember {
                     mutableStateOf(!settingsState.settings.appLockEnabled)
@@ -88,68 +99,50 @@ class MainActivity : ComponentActivity() {
                         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                val dailyDiaryViewModel: DiaryViewModel = viewModel(
-                    key = "daily-diary",
+                val diaryViewModel: DiaryViewModel = viewModel(
+                    key = "diary-${activeJournal.id.storageValue}",
                     factory = DiaryViewModel.Factory(
                         application.diaryRepository,
                         application.placeSearchRepository,
-                        EntryKind.Daily,
+                        activeJournal,
                         application.entrySessionRepository,
                     ),
                 )
-                val dreamDiaryViewModel: DiaryViewModel = viewModel(
-                    key = "dream-diary",
-                    factory = DiaryViewModel.Factory(
-                        application.diaryRepository,
-                        application.placeSearchRepository,
-                        EntryKind.Dream,
-                        application.entrySessionRepository,
-                    ),
-                )
-                val dailyState by dailyDiaryViewModel.uiState.collectAsStateWithLifecycle()
-                val dreamState by dreamDiaryViewModel.uiState.collectAsStateWithLifecycle()
-                val diaryViewModel = if (activeKind == EntryKind.Dream) {
-                    dreamDiaryViewModel
-                } else {
-                    dailyDiaryViewModel
-                }
-                val state = if (activeKind == EntryKind.Dream) dreamState else dailyState
-                LaunchedEffect(requestedWidgetDate) {
+                val state by diaryViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(requestedWidgetDate, activeJournal.id) {
                     requestedWidgetDate?.let { date ->
-                        settingsViewModel.setActiveEntryKind(EntryKind.Daily)
-                        dailyDiaryViewModel.selectDate(date)
+                        if (activeJournal.id != JournalId.PRIMARY) {
+                            settingsViewModel.setActiveJournalId(JournalId.PRIMARY)
+                        } else {
+                            diaryViewModel.selectDate(date)
+                            requestedWidgetDate = null
+                        }
                     }
                 }
                 LaunchedEffect(settingsState.settings.appLockEnabled) {
                     MnemeWidgetUpdater.requestUpdate(application)
                 }
                 LaunchedEffect(settingsState.settings.yesterdayPromptCutoffHour) {
-                    dailyDiaryViewModel.updateYesterdayPromptCutoffHour(
+                    diaryViewModel.updateYesterdayPromptCutoffHour(
                         settingsState.settings.yesterdayPromptCutoffHour,
                     )
                 }
                 var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
-                var pendingPhotoKind by rememberSaveable { mutableStateOf(EntryKind.Daily.storageValue) }
+                var pendingPhotoJournalId by rememberSaveable { mutableStateOf(JournalId.PRIMARY.storageValue) }
+                val currentDiaryViewModel by rememberUpdatedState(diaryViewModel)
+                val currentJournalId by rememberUpdatedState(activeJournal.id.storageValue)
                 val photoPicker = rememberLauncherForActivityResult(PickMultipleVisualMedia(20)) { uris ->
                     unlocked = true
-                    val target = if (pendingPhotoKind == EntryKind.Dream.storageValue) {
-                        dreamDiaryViewModel
-                    } else {
-                        dailyDiaryViewModel
-                    }
-                    target.addPhotos(uris)
+                    if (pendingPhotoJournalId == currentJournalId) currentDiaryViewModel.addPhotos(uris)
                 }
                 val camera = rememberLauncherForActivityResult(TakePicture()) { saved ->
                     val capturedUri = pendingCameraUri?.let(Uri::parse)
                     pendingCameraUri = null
                     unlocked = true
                     if (saved && capturedUri != null) {
-                        val target = if (pendingPhotoKind == EntryKind.Dream.storageValue) {
-                            dreamDiaryViewModel
-                        } else {
-                            dailyDiaryViewModel
+                        if (pendingPhotoJournalId == currentJournalId) {
+                            currentDiaryViewModel.addPhotos(listOf(capturedUri))
                         }
-                        target.addPhotos(listOf(capturedUri))
                     }
                 }
                 val diaryExport = rememberLauncherForActivityResult(CreateDocument("application/zip")) { uri ->
@@ -190,12 +183,11 @@ class MainActivity : ComponentActivity() {
                 MnemeApp(
                     state = state,
                     journalOpenKey = widgetOpenKey,
-                    dreamDiaryEnabled = settingsState.settings.dreamDiaryEnabled,
-                    dailyInitialDestination = application.entrySessionRepository.destination(EntryKind.Daily),
-                    dreamInitialDestination = application.entrySessionRepository.destination(EntryKind.Dream),
-                    onEntryKindChange = settingsViewModel::setActiveEntryKind,
-                    onDestinationChanged = { kind, destination ->
-                        application.entrySessionRepository.setDestination(kind, destination)
+                    journals = visibleJournals,
+                    initialDestination = application.entrySessionRepository.destination(activeJournal.id),
+                    onJournalChange = settingsViewModel::setActiveJournalId,
+                    onDestinationChanged = { journalId, destination ->
+                        application.entrySessionRepository.setDestination(journalId, destination)
                     },
                     onPreviousDay = diaryViewModel::previousDay,
                     onNextDay = diaryViewModel::nextDay,
@@ -203,13 +195,13 @@ class MainActivity : ComponentActivity() {
                     onSelectDate = diaryViewModel::selectDate,
                     onDocumentChange = diaryViewModel::updateDocument,
                     onChoosePhotos = {
-                        pendingPhotoKind = activeKind.storageValue
+                        pendingPhotoJournalId = activeJournal.id.storageValue
                         photoPicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
                     },
                     onTakePhoto = {
                         val uri = runCatching { createCameraUri() }.getOrNull()
                         if (uri != null) {
-                            pendingPhotoKind = activeKind.storageValue
+                            pendingPhotoJournalId = activeJournal.id.storageValue
                             pendingCameraUri = uri.toString()
                             runCatching { camera.launch(uri) }
                                 .onFailure { pendingCameraUri = null }
@@ -239,6 +231,12 @@ class MainActivity : ComponentActivity() {
                     onColorPaletteChange = settingsViewModel::setColorPalette,
                     onYesterdayPromptCutoffHourChange = settingsViewModel::setYesterdayPromptCutoffHour,
                     onDreamDiaryEnabledChange = settingsViewModel::setDreamDiaryEnabled,
+                    onCreateJournal = settingsViewModel::createJournal,
+                    onUpdateJournal = settingsViewModel::updateJournal,
+                    onReorderJournals = settingsViewModel::reorderJournals,
+                    onSetJournalArchived = settingsViewModel::setJournalArchived,
+                    onLoadJournalCounts = settingsViewModel::loadJournalCounts,
+                    onDeleteJournal = settingsViewModel::deleteJournal,
                     onSavePin = settingsViewModel::savePin,
                     onAppLockChange = settingsViewModel::setAppLock,
                     onBiometricChange = settingsViewModel::setBiometric,
