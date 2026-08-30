@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import com.lainsmain.mneme.data.ThemePreference
 import com.lainsmain.mneme.data.ColorPalette
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalRole
 
 private val MnemeDarkColors = darkColorScheme(
     primary = Color(0xFFFFB68C),
@@ -51,7 +53,7 @@ fun MnemeTheme(
     mode: ThemePreference = ThemePreference.Dark,
     palette: ColorPalette = ColorPalette.Ocean,
     dynamicColor: Boolean = false,
-    dreamMode: Boolean = false,
+    journal: JournalDefinition = JournalDefinition.Primary,
     content: @Composable () -> Unit,
 ) {
     val dark = when (mode) {
@@ -60,19 +62,35 @@ fun MnemeTheme(
         ThemePreference.System -> isSystemInDarkTheme()
     }
     val context = LocalContext.current
+    val journalPalette = journal.accentPalette ?: palette
     val baseColors = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
-        dark -> palette.darkColors()
-        else -> palette.lightColors()
+        dark -> journalPalette.darkColors()
+        else -> journalPalette.lightColors()
     }
-    val colors = if (dreamMode) baseColors.dreamVariant(dark) else baseColors
+    val accentedColors = if (dynamicColor && journal.role == JournalRole.Custom) {
+        baseColors.accentVariant(journalPalette, dark)
+    } else baseColors
+    val colors = if (journal.role == JournalRole.Dream) accentedColors.dreamVariant(dark) else accentedColors
 
     MaterialTheme(
         colorScheme = colors,
         typography = MnemeTypography,
         shapes = MnemeShapes,
         content = content,
+    )
+}
+
+private fun ColorScheme.accentVariant(palette: ColorPalette, dark: Boolean): ColorScheme {
+    val accent = if (dark) palette.darkColors() else palette.lightColors()
+    return copy(
+        primary = lerp(primary, accent.primary, 0.56f),
+        onPrimary = accent.onPrimary,
+        primaryContainer = lerp(primaryContainer, accent.primaryContainer, 0.48f),
+        onPrimaryContainer = accent.onPrimaryContainer,
+        secondary = lerp(secondary, accent.secondary, 0.34f),
+        tertiary = lerp(tertiary, accent.tertiary, 0.30f),
     )
 }
 

@@ -46,6 +46,7 @@ class BackupRepository(
     private val context: Context,
     private val diaryDao: DiaryDao,
     private val settingsRepository: AppSettingsRepository,
+    private val journalRepository: JournalRepository,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
     private val recoveryKeyManager = RecoveryKeyManager(context)
@@ -109,7 +110,7 @@ class BackupRepository(
                             }
                             val encrypted = downloadBytes(settings, path)
                             json.decodeFromString<VaultManifest>(decryptBytes(encrypted, keyBytes).toString(Charsets.UTF_8))
-                                .takeIf { it.format == VAULT_FORMAT }
+                                .takeIf { it.format == VAULT_FORMAT_V2 || it.format == VAULT_FORMAT_V3 }
                         }.getOrNull()
                     }
                     ?: error(
@@ -117,10 +118,15 @@ class BackupRepository(
                             "backed up again from the original phone.",
                     )
 
+                val journals = restoredJournals(manifest)
+                val journalIds = journals.mapTo(mutableSetOf(), JournalEntity::id)
                 val pages = manifest.pages.map { page ->
+                    val journalId = JournalId.parse(page.journalId ?: page.entryKind)
+                        ?: error("The backup contains an invalid journal identifier.")
+                    require(journalId.storageValue in journalIds) { "An entry refers to a missing journal." }
                     DiaryPageEntity(
                         id = page.id,
-                        entryKind = EntryKind.fromStorage(page.entryKind).storageValue,
+                        journalId = journalId.storageValue,
                         diaryDate = page.date,
                         documentJson = page.document,
                         plainText = page.plainText,
@@ -191,8 +197,12 @@ class BackupRepository(
                     )
                 }
                 val recaps = manifest.monthlyRecaps.map { recap ->
+                    val journalId = JournalId.parse(recap.journalId)
+                        ?: error("The backup contains an invalid recap journal identifier.")
+                    require(journalId.storageValue in journalIds) { "A recap refers to a missing journal." }
                     MonthlyRecapEntity(
                         id = recap.id,
+                        journalId = journalId.storageValue,
                         yearMonth = recap.yearMonth,
                         documentJson = recap.document,
                         plainText = recap.plainText,
@@ -203,8 +213,9 @@ class BackupRepository(
                     )
                 }
                 recoveryKeyManager.importRecoveryCode(recoveryCode)
-                diaryDao.restoreBackup(pages, attachments, recaps)
-                if (pages.any { it.entryKind == EntryKind.Dream.storageValue }) {
+                diaryDao.restoreBackup(journals, pages, attachments, recaps)
+                journalRepository.ensureBuiltIns()
+                if (pages.any { it.journalId == JournalId.DREAM.storageValue }) {
                     settingsRepository.setDreamDiaryEnabled(true)
                 }
                 MnemeWidgetUpdater.requestUpdate(context)
@@ -258,6 +269,7 @@ class BackupRepository(
         val pages = diaryDao.pagesForBackup()
         val attachments = diaryDao.attachmentsForBackup()
         val recaps = diaryDao.recapsForBackup()
+        val journals = diaryDao.journalsForBackup()
         val keyBytes = recoveryKeyManager.keyBytes()
         var uploadedBytes = 0L
         val encryptedObjects = mutableMapOf<String, EncryptedObject>()
@@ -268,7 +280,7 @@ class BackupRepository(
                 require(original.isFile) {
                     "A photo belonging to this diary is missing from local storage. Backup stopped to avoid data loss."
                 }
-                val cacheKey = "$VAULT_FORMAT:$keyFingerprint:${attachment.sha256}"
+                val cacheKey = "$VAULT_FORMAT_V3:$keyFingerprint:${attachment.sha256}"
                 val cachedHash = objectCache().getString(cacheKey, null)
                     ?.takeIf { objectExists(settings, it) }
                 val encrypted = cachedHash?.let { EncryptedObject(file = null, hash = it) }
@@ -282,7 +294,7 @@ class BackupRepository(
             }
 
             val revision = System.currentTimeMillis().coerceAtLeast(1L)
-            val manifest = buildManifest(revision, pages, attachments, recaps, encryptedObjects)
+            val manifest = buildManifest(revision, journals, pages, attachments, recaps, encryptedObjects)
             val encryptedManifest = encryptBytes(json.encodeToString(manifest).toByteArray(), keyBytes)
             val manifestFile = requireNotNull(encryptedManifest.file)
             try {
@@ -301,19 +313,34 @@ class BackupRepository(
 
     private fun buildManifest(
         revision: Long,
+        journals: List<JournalEntity>,
         pages: List<DiaryPageEntity>,
         attachments: List<AttachmentEntity>,
         recaps: List<MonthlyRecapEntity>,
         objects: Map<String, EncryptedObject>,
     ) = VaultManifest(
-        format = VAULT_FORMAT,
+        format = VAULT_FORMAT_V3,
         deviceId = deviceId(),
         revision = revision,
         createdAtEpochMillis = System.currentTimeMillis(),
+        journals = journals.map { journal ->
+            VaultJournal(
+                id = journal.id,
+                role = journal.role,
+                title = journal.title,
+                iconKind = journal.iconKind,
+                iconValue = journal.iconValue,
+                accentPalette = journal.accentPalette,
+                sortOrder = journal.sortOrder,
+                createdAtEpochMillis = journal.createdAtEpochMillis,
+                updatedAtEpochMillis = journal.updatedAtEpochMillis,
+                archivedAtEpochMillis = journal.archivedAtEpochMillis,
+            )
+        },
         pages = pages.map { page ->
             VaultPage(
                 id = page.id,
-                entryKind = page.entryKind,
+                journalId = page.journalId,
                 date = page.diaryDate,
                 document = page.documentJson,
                 plainText = page.plainText,
@@ -360,6 +387,7 @@ class BackupRepository(
         monthlyRecaps = recaps.map { recap ->
             VaultMonthlyRecap(
                 id = recap.id,
+                journalId = recap.journalId,
                 yearMonth = recap.yearMonth,
                 document = recap.documentJson,
                 plainText = recap.plainText,
@@ -370,6 +398,41 @@ class BackupRepository(
             )
         },
     )
+
+    private fun restoredJournals(manifest: VaultManifest): List<JournalEntity> {
+        if (manifest.format == VAULT_FORMAT_V2 || manifest.journals.isEmpty()) {
+            return listOf(JournalDefinition.Primary.toEntity(), JournalDefinition.Dream.toEntity())
+        }
+        val restored = manifest.journals.map { journal ->
+            val id = JournalId.parse(journal.id) ?: error("The backup contains an invalid journal identifier.")
+            val role = JournalRole.fromStorage(journal.role)
+            require(
+                (id == JournalId.PRIMARY && role == JournalRole.Primary) ||
+                    (id == JournalId.DREAM && role == JournalRole.Dream) ||
+                    (id != JournalId.PRIMARY && id != JournalId.DREAM && role == JournalRole.Custom),
+            ) { "The backup contains an invalid journal role." }
+            val iconKind = JournalIconKind.fromStorage(journal.iconKind)
+            val iconValue = when (iconKind) {
+                JournalIconKind.Material -> journal.iconValue.takeIf(JournalRepository.MATERIAL_ICON_KEYS::contains) ?: "journal"
+                JournalIconKind.Emoji -> journal.iconValue.takeIf(String::isNotBlank) ?: "📖"
+            }
+            JournalEntity(
+                id = id.storageValue,
+                role = role.storageValue,
+                title = journal.title.trim().take(40).ifBlank { "Journal" },
+                iconKind = iconKind.storageValue,
+                iconValue = iconValue,
+                accentPalette = journal.accentPalette?.takeIf { stored -> ColorPalette.entries.any { it.name == stored } },
+                sortOrder = journal.sortOrder,
+                createdAtEpochMillis = journal.createdAtEpochMillis,
+                updatedAtEpochMillis = journal.updatedAtEpochMillis,
+                archivedAtEpochMillis = journal.archivedAtEpochMillis,
+            )
+        }.distinctBy(JournalEntity::id)
+        require(restored.any { it.id == JournalId.PRIMARY.storageValue }) { "The backup is missing the primary journal." }
+        return if (restored.any { it.id == JournalId.DREAM.storageValue }) restored
+        else restored + JournalDefinition.Dream.toEntity()
+    }
 
     private fun encryptFile(source: File, keyBytes: ByteArray): EncryptedObject {
         val target = File.createTempFile("mneme-backup-", ".vault", context.cacheDir)
@@ -646,7 +709,8 @@ class BackupRepository(
     private data class EncryptedObject(val file: File?, val hash: String)
 
     private companion object {
-        const val VAULT_FORMAT = "mneme-vault-v2"
+        const val VAULT_FORMAT_V2 = "mneme-vault-v2"
+        const val VAULT_FORMAT_V3 = "mneme-vault-v3"
         val MAGIC_V2 = "MNEME2".toByteArray(Charsets.US_ASCII)
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val KEY_DEVICE_ID = "device_id"

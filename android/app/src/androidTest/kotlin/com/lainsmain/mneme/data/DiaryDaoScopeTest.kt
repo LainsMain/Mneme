@@ -34,71 +34,74 @@ class DiaryDaoScopeTest {
     @Test
     fun dailyAndDreamContent_neverCrossScopedQueries() = runBlocking {
         val date = "2026-08-26"
-        dao.upsertPage(page("daily-page", EntryKind.Daily, date, "Daily memory", favorite = true))
-        dao.upsertPage(page("dream-page", EntryKind.Dream, date, "Dream memory", favorite = false))
+        val workout = JournalId.custom()
+        dao.upsertPage(page("daily-page", JournalId.PRIMARY, date, "Daily memory", favorite = true))
+        dao.upsertPage(page("dream-page", JournalId.DREAM, date, "Dream memory", favorite = false))
+        dao.upsertPage(page("workout-page", workout, date, "Workout memory", favorite = false))
         dao.insertAttachment(attachment("daily-photo", "daily-page", "Daily caption"))
         dao.insertAttachment(attachment("dream-photo", "dream-page", "Dream caption"))
 
         assertEquals(
             "daily-page",
-            dao.observePage(EntryKind.Daily.storageValue, date).first()?.id,
+            dao.observePage(JournalId.PRIMARY.storageValue, date).first()?.id,
         )
         assertEquals(
             "dream-page",
-            dao.observePage(EntryKind.Dream.storageValue, date).first()?.id,
+            dao.observePage(JournalId.DREAM.storageValue, date).first()?.id,
         )
         assertEquals(
             listOf("Daily memory"),
-            dao.observeAllDays(EntryKind.Daily.storageValue).first().map(MonthDayRow::plainText),
+            dao.observeAllDays(JournalId.PRIMARY.storageValue).first().map(MonthDayRow::plainText),
         )
         assertEquals(
             listOf("Dream memory"),
-            dao.observeAllDays(EntryKind.Dream.storageValue).first().map(MonthDayRow::plainText),
+            dao.observeAllDays(JournalId.DREAM.storageValue).first().map(MonthDayRow::plainText),
         )
         assertEquals(
             listOf("daily-photo"),
-            dao.observeAllMedia(EntryKind.Daily.storageValue).first().map { it.attachment.id },
+            dao.observeAllMedia(JournalId.PRIMARY.storageValue).first().map { it.attachment.id },
         )
         assertEquals(
             listOf("dream-photo"),
-            dao.observeAllMedia(EntryKind.Dream.storageValue).first().map { it.attachment.id },
+            dao.observeAllMedia(JournalId.DREAM.storageValue).first().map { it.attachment.id },
         )
         assertEquals(
             listOf("daily-photo"),
-            dao.observeAttachments(EntryKind.Daily.storageValue, date).first().map(AttachmentEntity::id),
+            dao.observeAttachments(JournalId.PRIMARY.storageValue, date).first().map(AttachmentEntity::id),
         )
         assertEquals(
             listOf("dream-photo"),
-            dao.observeAttachments(EntryKind.Dream.storageValue, date).first().map(AttachmentEntity::id),
+            dao.observeAttachments(JournalId.DREAM.storageValue, date).first().map(AttachmentEntity::id),
         )
         assertEquals(
             listOf("Daily memory"),
-            dao.observeMonth(EntryKind.Daily.storageValue, date, date).first().map(MonthDayRow::plainText),
+            dao.observeMonth(JournalId.PRIMARY.storageValue, date, date).first().map(MonthDayRow::plainText),
         )
         assertEquals(
             listOf("Dream memory"),
-            dao.search(EntryKind.Dream.storageValue, "memory").first().map(DiaryPageEntity::plainText),
+            dao.search(JournalId.DREAM.storageValue, "memory").first().map(DiaryPageEntity::plainText),
         )
+        assertEquals(listOf("Workout memory"), dao.observeAllDays(workout.storageValue).first().map(MonthDayRow::plainText))
     }
 
     private fun page(
         id: String,
-        kind: EntryKind,
+        kind: JournalId,
         date: String,
         text: String,
         favorite: Boolean,
     ) = DiaryPageEntity(
         id = id,
-        entryKind = kind.storageValue,
+        journalId = kind.storageValue,
         diaryDate = date,
         documentJson = "{}",
         plainText = text,
         createdAtEpochMillis = 1,
         updatedAtEpochMillis = 1,
         revision = 1,
-        locationName = if (kind == EntryKind.Daily) "Brussels" else "Antwerp",
-        latitude = if (kind == EntryKind.Daily) 50.85 else 51.22,
-        longitude = if (kind == EntryKind.Daily) 4.35 else 4.40,
+        locationName = if (kind == JournalId.PRIMARY) "Brussels" else "Antwerp",
+        latitude = if (kind == JournalId.PRIMARY) 50.85 else 51.22,
+        longitude = if (kind == JournalId.PRIMARY) 4.35 else 4.40,
         isFavorite = favorite,
     )
 

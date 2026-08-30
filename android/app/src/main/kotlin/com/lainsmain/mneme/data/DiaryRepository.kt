@@ -33,7 +33,7 @@ import kotlinx.serialization.json.Json
 
 data class DiaryPage(
     val id: String,
-    val entryKind: EntryKind,
+    val journalId: JournalId,
     val date: LocalDate,
     val document: RichTextDocument,
     val revision: Long,
@@ -93,6 +93,7 @@ data class PhotoImportResult(val imported: Int, val failed: Int)
 
 data class MonthlyRecap(
     val id: String,
+    val journalId: JournalId,
     val month: YearMonth,
     val document: RichTextDocument,
     val revision: Long,
@@ -104,12 +105,12 @@ class DiaryRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    fun observePage(entryKind: EntryKind, date: LocalDate): Flow<DiaryPage?> =
-        diaryDao.observePage(entryKind.storageValue, date.toString()).map { entity -> entity?.toModel() }
+    fun observePage(journalId: JournalId, date: LocalDate): Flow<DiaryPage?> =
+        diaryDao.observePage(journalId.storageValue, date.toString()).map { entity -> entity?.toModel() }
 
-    fun observeMonth(entryKind: EntryKind, month: YearMonth): Flow<Map<LocalDate, DaySummary>> =
+    fun observeMonth(journalId: JournalId, month: YearMonth): Flow<Map<LocalDate, DaySummary>> =
         diaryDao.observeMonth(
-            entryKind = entryKind.storageValue,
+            journalId = journalId.storageValue,
             firstDate = month.atDay(1).toString(),
             lastDate = month.atEndOfMonth().toString(),
         ).map { rows ->
@@ -134,8 +135,8 @@ class DiaryRepository(
             }
         }
 
-    fun observeAllDays(entryKind: EntryKind): Flow<List<DaySummary>> =
-        diaryDao.observeAllDays(entryKind.storageValue).map { rows ->
+    fun observeAllDays(journalId: JournalId): Flow<List<DaySummary>> =
+        diaryDao.observeAllDays(journalId.storageValue).map { rows ->
         rows.map { row ->
             val date = LocalDate.parse(row.diaryDate)
             DaySummary(
@@ -154,8 +155,8 @@ class DiaryRepository(
         }
         }
 
-    fun observeAllMedia(entryKind: EntryKind): Flow<List<DatedAttachment>> =
-        diaryDao.observeAllMedia(entryKind.storageValue).map { rows ->
+    fun observeAllMedia(journalId: JournalId): Flow<List<DatedAttachment>> =
+        diaryDao.observeAllMedia(journalId.storageValue).map { rows ->
         rows.map {
             DatedAttachment(
                 date = LocalDate.parse(it.diaryDate),
@@ -165,19 +166,21 @@ class DiaryRepository(
         }
         }
 
-    fun observeAttachments(entryKind: EntryKind, date: LocalDate): Flow<List<DiaryAttachment>> =
-        diaryDao.observeAttachments(entryKind.storageValue, date.toString()).map { attachments ->
+    fun observeAttachments(journalId: JournalId, date: LocalDate): Flow<List<DiaryAttachment>> =
+        diaryDao.observeAttachments(journalId.storageValue, date.toString()).map { attachments ->
             attachments.map { it.toModel() }
         }
 
-    fun observeRecap(month: YearMonth): Flow<MonthlyRecap?> =
-        diaryDao.observeRecap(month.toString()).map { entity -> entity?.toModel() }
+    fun observeRecap(journalId: JournalId, month: YearMonth): Flow<MonthlyRecap?> =
+        diaryDao.observeRecap(journalId.storageValue, month.toString()).map { entity -> entity?.toModel() }
 
-    fun observeRecapMonths(): Flow<Set<YearMonth>> = diaryDao.observeRecapMonths().map { months ->
+    fun observeRecapMonths(journalId: JournalId): Flow<Set<YearMonth>> =
+        diaryDao.observeRecapMonths(journalId.storageValue).map { months ->
         months.mapNotNull { runCatching { YearMonth.parse(it) }.getOrNull() }.toSet()
     }
 
-    suspend fun importPhotos(pageId: String, uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
+    suspend fun importPhotos(journalId: JournalId, pageId: String, uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
+        require(diaryDao.pageById(pageId)?.journalId == journalId.storageValue) { "Entry does not belong to this journal." }
         val directory = File(context.filesDir, "attachments").apply { mkdirs() }
         var order = diaryDao.maximumAttachmentOrder(pageId) + 1
         var imported = 0
@@ -250,7 +253,7 @@ class DiaryRepository(
     }
 
     suspend fun save(
-        entryKind: EntryKind,
+        journalId: JournalId,
         date: LocalDate,
         existing: DiaryPage?,
         document: RichTextDocument,
@@ -258,7 +261,7 @@ class DiaryRepository(
         val now = clock.millis()
         val page = DiaryPageEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
-            entryKind = entryKind.storageValue,
+            journalId = journalId.storageValue,
             diaryDate = date.toString(),
             documentJson = json.encodeToString(RichTextDocument.serializer(), document),
             plainText = document.text,
@@ -278,6 +281,7 @@ class DiaryRepository(
     }
 
     suspend fun saveRecap(
+        journalId: JournalId,
         month: YearMonth,
         existing: MonthlyRecap?,
         document: RichTextDocument,
@@ -285,6 +289,7 @@ class DiaryRepository(
         val now = clock.millis()
         val recap = MonthlyRecapEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
+            journalId = journalId.storageValue,
             yearMonth = month.toString(),
             documentJson = json.encodeToString(RichTextDocument.serializer(), document),
             plainText = document.text,
@@ -297,59 +302,60 @@ class DiaryRepository(
         return recap.toModel()
     }
 
-    suspend fun makePhotoPrimary(attachmentId: String) = withContext(Dispatchers.IO) {
-        diaryDao.makeAttachmentPrimary(attachmentId)
+    suspend fun makePhotoPrimary(journalId: JournalId, attachmentId: String) = withContext(Dispatchers.IO) {
+        diaryDao.makeAttachmentPrimary(journalId.storageValue, attachmentId)
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
-    suspend fun deletePhoto(attachmentId: String) = withContext(Dispatchers.IO) {
-        val attachment = diaryDao.attachmentById(attachmentId) ?: return@withContext
-        diaryDao.deleteAttachmentById(attachmentId)
+    suspend fun deletePhoto(journalId: JournalId, attachmentId: String) = withContext(Dispatchers.IO) {
+        val attachment = diaryDao.attachmentById(journalId.storageValue, attachmentId) ?: return@withContext
+        diaryDao.deleteAttachmentById(journalId.storageValue, attachmentId)
         File(attachment.encryptedFileName).delete()
         attachment.thumbnailFileName?.let { File(it).delete() }
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
-    suspend fun setPhotoCaption(attachmentId: String, caption: String) = withContext(Dispatchers.IO) {
-        diaryDao.setAttachmentCaption(attachmentId, caption.trim())
+    suspend fun setPhotoCaption(journalId: JournalId, attachmentId: String, caption: String) = withContext(Dispatchers.IO) {
+        diaryDao.setAttachmentCaption(journalId.storageValue, attachmentId, caption.trim())
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
-    suspend fun setFavorite(pageId: String, favorite: Boolean) = withContext(Dispatchers.IO) {
-        diaryDao.setFavorite(pageId, favorite, clock.millis())
+    suspend fun setFavorite(journalId: JournalId, pageId: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+        diaryDao.setFavorite(journalId.storageValue, pageId, favorite, clock.millis())
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
     suspend fun setManualLocation(
+        journalId: JournalId,
         pageId: String,
         name: String?,
         latitude: Double?,
         longitude: Double?,
     ) = withContext(Dispatchers.IO) {
-        diaryDao.setManualLocation(pageId, name, latitude, longitude, clock.millis())
+        diaryDao.setManualLocation(pageId, journalId.storageValue, name, latitude, longitude, clock.millis())
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
-    suspend fun setAutomaticLocationName(pageId: String, name: String?) = withContext(Dispatchers.IO) {
-        diaryDao.setAutomaticLocationName(pageId, name, clock.millis())
+    suspend fun setAutomaticLocationName(journalId: JournalId, pageId: String, name: String?) = withContext(Dispatchers.IO) {
+        diaryDao.setAutomaticLocationName(journalId.storageValue, pageId, name, clock.millis())
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
-    suspend fun usePrimaryPhotoLocation(pageId: String) = withContext(Dispatchers.IO) {
-        diaryDao.clearManualLocation(pageId, clock.millis())
+    suspend fun usePrimaryPhotoLocation(journalId: JournalId, pageId: String) = withContext(Dispatchers.IO) {
+        diaryDao.clearManualLocation(journalId.storageValue, pageId, clock.millis())
         BackupWorker.scheduleSoon(context)
         MnemeWidgetUpdater.requestUpdate(context)
     }
 
     private fun DiaryPageEntity.toModel() = DiaryPage(
         id = id,
-        entryKind = EntryKind.fromStorage(entryKind),
+        journalId = JournalId.fromStorage(journalId),
         date = LocalDate.parse(diaryDate),
         document = runCatching {
             json.decodeFromString(RichTextDocument.serializer(), documentJson)
@@ -389,6 +395,7 @@ class DiaryRepository(
 
     private fun MonthlyRecapEntity.toModel() = MonthlyRecap(
         id = id,
+        journalId = JournalId.fromStorage(journalId),
         month = YearMonth.parse(yearMonth),
         document = runCatching {
             json.decodeFromString(RichTextDocument.serializer(), documentJson)

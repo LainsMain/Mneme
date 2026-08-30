@@ -70,7 +70,7 @@ class MnemeDatabaseMigrationTest {
                 "SELECT entryKind, plainText, isFavorite FROM diary_pages WHERE id = 'daily-id'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(EntryKind.Daily.storageValue, cursor.getString(0))
+                assertEquals(JournalId.PRIMARY.storageValue, cursor.getString(0))
                 assertEquals("Existing writing", cursor.getString(1))
                 assertEquals(1, cursor.getInt(2))
             }
@@ -95,6 +95,37 @@ class MnemeDatabaseMigrationTest {
                 """.trimIndent(),
             )
             database.query("SELECT COUNT(*) FROM diary_pages WHERE diaryDate = '2026-08-26'").use {
+                assertTrue(it.moveToFirst())
+                assertEquals(2, it.getInt(0))
+            }
+        }
+    }
+
+    @Test
+    fun migrate4To5_createsBuiltInsAndScopesRecaps() {
+        helper.createDatabase(TEST_DATABASE, 4).use { database ->
+            database.execSQL(
+                "INSERT INTO monthly_recaps (id, yearMonth, documentJson, plainText, createdAtEpochMillis, updatedAtEpochMillis, revision) " +
+                    "VALUES ('recap-id', '2026-08', '{}', 'August recap', 1, 2, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(TEST_DATABASE, 5, true, MnemeDatabase.MIGRATION_4_5).use { database ->
+            database.query("SELECT id, role FROM journals ORDER BY sortOrder").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("daily", cursor.getString(0))
+                assertEquals("primary", cursor.getString(1))
+                assertTrue(cursor.moveToNext())
+                assertEquals("dream", cursor.getString(0))
+            }
+            database.query("SELECT journalId FROM monthly_recaps WHERE id = 'recap-id'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("daily", cursor.getString(0))
+            }
+            database.execSQL(
+                "INSERT INTO monthly_recaps (id, journalId, yearMonth, documentJson, plainText, createdAtEpochMillis, updatedAtEpochMillis, revision) " +
+                    "VALUES ('custom-recap', 'custom:00000000-0000-0000-0000-000000000001', '2026-08', '{}', 'Custom', 1, 2, 1)",
+            )
+            database.query("SELECT COUNT(*) FROM monthly_recaps WHERE yearMonth = '2026-08'").use {
                 assertTrue(it.moveToFirst())
                 assertEquals(2, it.getInt(0))
             }

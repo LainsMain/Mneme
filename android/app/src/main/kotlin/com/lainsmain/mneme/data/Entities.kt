@@ -4,6 +4,21 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
+
+@Entity(tableName = "journals")
+data class JournalEntity(
+    @PrimaryKey val id: String,
+    val role: String,
+    val title: String,
+    val iconKind: String,
+    val iconValue: String,
+    val accentPalette: String?,
+    val sortOrder: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val archivedAtEpochMillis: Long? = null,
+)
 
 @Entity(
     tableName = "diary_pages",
@@ -11,7 +26,7 @@ import androidx.room.PrimaryKey
 )
 data class DiaryPageEntity(
     @PrimaryKey val id: String,
-    val entryKind: String = EntryKind.Daily.storageValue,
+    @ColumnInfo(name = "entryKind") val journalId: String = JournalId.PRIMARY.storageValue,
     val diaryDate: String,
     val documentJson: String,
     val plainText: String,
@@ -69,10 +84,11 @@ data class AttachmentEntity(
 
 @Entity(
     tableName = "monthly_recaps",
-    indices = [Index(value = ["yearMonth"], unique = true)],
+    indices = [Index(value = ["journalId", "yearMonth"], unique = true)],
 )
 data class MonthlyRecapEntity(
     @PrimaryKey val id: String,
+    val journalId: String = JournalId.PRIMARY.storageValue,
     val yearMonth: String,
     val documentJson: String,
     val plainText: String,

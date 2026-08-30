@@ -69,6 +69,10 @@ import com.lainsmain.mneme.BuildConfig
 import com.lainsmain.mneme.data.ReleaseInfo
 import com.lainsmain.mneme.data.UpdateDownloadPhase
 import com.lainsmain.mneme.data.RemoteManifestPointer
+import com.lainsmain.mneme.data.JournalContentCounts
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalIcon
+import com.lainsmain.mneme.data.JournalId
 import java.text.DateFormat
 import java.util.Date
 import java.time.Instant
@@ -77,11 +81,20 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
+    journalStartPage: String? = null,
+    onJournalPageChange: (String?) -> Unit = {},
     onThemeChange: (ThemePreference) -> Unit,
     onMaterialYouChange: (Boolean) -> Unit,
     onColorPaletteChange: (ColorPalette) -> Unit,
     onYesterdayPromptCutoffHourChange: (Int) -> Unit,
     onDreamDiaryEnabledChange: (Boolean) -> Unit,
+    onCreateJournal: (String, JournalIcon, ColorPalette, (JournalDefinition) -> Unit) -> Unit,
+    onUpdateJournal: (String, JournalIcon, ColorPalette, JournalId, () -> Unit) -> Unit,
+    onReorderJournals: (List<JournalId>) -> Unit,
+    onSetJournalArchived: (JournalId, Boolean) -> Unit,
+    onLoadJournalCounts: (JournalId, (JournalContentCounts) -> Unit) -> Unit,
+    onDeleteJournal: (JournalId, String) -> Unit,
+    onOpenJournal: (JournalId) -> Unit,
     onSavePin: (String) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
     onBiometricChange: (Boolean) -> Unit,
@@ -107,7 +120,85 @@ fun SettingsScreen(
     var restoreCode by remember { mutableStateOf("") }
     var restoreSnapshot by remember { mutableStateOf<RemoteManifestPointer?>(null) }
     var cleanupDialogVisible by remember { mutableStateOf(false) }
+    var journalManagementVisible by remember { mutableStateOf(false) }
+    var journalEditorVisible by remember { mutableStateOf(false) }
+    var editedJournal by remember { mutableStateOf<JournalDefinition?>(null) }
     val clipboard = LocalClipboardManager.current
+
+    LaunchedEffect(journalStartPage) {
+        when (journalStartPage) {
+            "create" -> {
+                editedJournal = null
+                journalManagementVisible = false
+                journalEditorVisible = true
+            }
+            "manage" -> {
+                journalEditorVisible = false
+                journalManagementVisible = true
+            }
+            null -> {
+                journalEditorVisible = false
+                journalManagementVisible = false
+            }
+        }
+    }
+
+    if (journalEditorVisible) {
+        JournalEditorScreen(
+            journal = editedJournal,
+            errorMessage = state.journalMessage,
+            onCancel = {
+                journalEditorVisible = false
+                onJournalPageChange(if (journalManagementVisible) "manage" else null)
+            },
+            onCreate = { title, icon, palette ->
+                onCreateJournal(title, icon, palette) { created ->
+                    journalEditorVisible = false
+                    onOpenJournal(created.id)
+                }
+            },
+            onUpdate = { title, icon, palette ->
+                editedJournal?.let { journal ->
+                    onUpdateJournal(title, icon, palette, journal.id) {
+                        journalEditorVisible = false
+                        onJournalPageChange(if (journalManagementVisible) "manage" else null)
+                    }
+                }
+            },
+            showHeader = false,
+            modifier = modifier,
+        )
+        return
+    }
+    if (journalManagementVisible) {
+        JournalManagementScreen(
+            journals = state.journals,
+            dreamEnabled = state.settings.dreamDiaryEnabled,
+            message = state.journalMessage,
+            onBack = {
+                journalManagementVisible = false
+                onJournalPageChange(null)
+            },
+            onCreate = {
+                editedJournal = null
+                journalEditorVisible = true
+                onJournalPageChange("create")
+            },
+            onEdit = {
+                editedJournal = it
+                journalEditorVisible = true
+                onJournalPageChange("edit")
+            },
+            onDreamEnabledChange = onDreamDiaryEnabledChange,
+            onReorder = onReorderJournals,
+            onSetArchived = onSetJournalArchived,
+            onLoadCounts = onLoadJournalCounts,
+            onDelete = onDeleteJournal,
+            showHeader = false,
+            modifier = modifier,
+        )
+        return
+    }
 
     LaunchedEffect(state.settings.serverUrl, state.settings.serverToken) {
         serverUrl = state.settings.serverUrl
@@ -196,6 +287,21 @@ fun SettingsScreen(
             }
         }
 
+        JournalSettingsCard(
+            journals = state.journals,
+            dreamEnabled = state.settings.dreamDiaryEnabled,
+            onDreamEnabledChange = onDreamDiaryEnabledChange,
+            onCreate = {
+                editedJournal = null
+                journalEditorVisible = true
+                onJournalPageChange("create")
+            },
+            onManage = {
+                journalManagementVisible = true
+                onJournalPageChange("manage")
+            },
+        )
+
         SettingsSectionTitle(
             icon = { Icon(Icons.Rounded.Schedule, contentDescription = null) },
             title = "Writing",
@@ -206,34 +312,6 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.Bedtime,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Dream diary",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "Keep dreams in a separate diary using their wake-up date. Turning this off hides them; it never deletes them.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = state.settings.dreamDiaryEnabled,
-                        onCheckedChange = onDreamDiaryEnabledChange,
-                    )
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text(
                     "Yesterday shortcut",
                     style = MaterialTheme.typography.titleMedium,

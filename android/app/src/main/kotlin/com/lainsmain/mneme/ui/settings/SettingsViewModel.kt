@@ -15,7 +15,11 @@ import com.lainsmain.mneme.data.UpdateRepository
 import com.lainsmain.mneme.data.UpdateDownloadPhase
 import com.lainsmain.mneme.data.DiaryExportRepository
 import com.lainsmain.mneme.data.RemoteManifestPointer
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalContentCounts
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalIcon
+import com.lainsmain.mneme.data.JournalId
+import com.lainsmain.mneme.data.JournalRepository
 import com.lainsmain.mneme.data.ServerStorageStats
 import com.lainsmain.mneme.BuildConfig
 import kotlinx.coroutines.CancellationException
@@ -60,6 +64,8 @@ data class SettingsUiState(
     val maintenanceMessage: String? = null,
     val exportStatus: ExportStatus = ExportStatus.Idle,
     val exportMessage: String? = null,
+    val journals: List<JournalDefinition> = listOf(JournalDefinition.Primary, JournalDefinition.Dream),
+    val journalMessage: String? = null,
 )
 
 class SettingsViewModel(
@@ -67,6 +73,7 @@ class SettingsViewModel(
     private val backupRepository: BackupRepository,
     private val updateRepository: UpdateRepository,
     private val exportRepository: DiaryExportRepository,
+    private val journalRepository: JournalRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         SettingsUiState(
@@ -100,6 +107,11 @@ class SettingsViewModel(
                 )
             }
         }
+        viewModelScope.launch {
+            journalRepository.journals.collect { journals ->
+                _uiState.value = _uiState.value.copy(journals = journals)
+            }
+        }
         checkForUpdates(force = true)
         monitorUpdateDownload()
         if (repository.settings.value.serverConnected) {
@@ -118,7 +130,74 @@ class SettingsViewModel(
 
     fun setDreamDiaryEnabled(enabled: Boolean) = repository.setDreamDiaryEnabled(enabled)
 
-    fun setActiveEntryKind(entryKind: EntryKind) = repository.setActiveEntryKind(entryKind)
+    fun setActiveJournalId(journalId: JournalId) = repository.setActiveJournalId(journalId)
+
+    fun createJournal(
+        title: String,
+        icon: JournalIcon,
+        palette: ColorPalette,
+        onCreated: (JournalDefinition) -> Unit,
+    ) {
+        viewModelScope.launch {
+            journalRepository.create(title, icon, palette).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(journalMessage = null)
+                    repository.setActiveJournalId(it.id)
+                    onCreated(it)
+                },
+                onFailure = { _uiState.value = _uiState.value.copy(journalMessage = it.message) },
+            )
+        }
+    }
+
+    fun updateJournal(
+        title: String,
+        icon: JournalIcon,
+        palette: ColorPalette,
+        journalId: JournalId,
+        onUpdated: () -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            journalRepository.update(journalId, title, icon, palette).fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(journalMessage = null)
+                    onUpdated()
+                },
+                onFailure = { _uiState.value = _uiState.value.copy(journalMessage = it.message) },
+            )
+        }
+    }
+
+    fun reorderJournals(ids: List<JournalId>) {
+        viewModelScope.launch { journalRepository.reorder(ids) }
+    }
+
+    fun setJournalArchived(journalId: JournalId, archived: Boolean) {
+        viewModelScope.launch {
+            journalRepository.setArchived(journalId, archived).fold(
+                onSuccess = {
+                    if (archived && repository.settings.value.activeJournalId == journalId) {
+                        repository.setActiveJournalId(JournalId.PRIMARY)
+                    }
+                    _uiState.value = _uiState.value.copy(journalMessage = null)
+                },
+                onFailure = { _uiState.value = _uiState.value.copy(journalMessage = it.message) },
+            )
+        }
+    }
+
+    fun loadJournalCounts(journalId: JournalId, onLoaded: (JournalContentCounts) -> Unit) {
+        viewModelScope.launch { onLoaded(journalRepository.counts(journalId)) }
+    }
+
+    fun deleteJournal(journalId: JournalId, confirmationTitle: String) {
+        viewModelScope.launch {
+            journalRepository.delete(journalId, confirmationTitle).fold(
+                onSuccess = { _uiState.value = _uiState.value.copy(journalMessage = null) },
+                onFailure = { _uiState.value = _uiState.value.copy(journalMessage = it.message) },
+            )
+        }
+    }
 
     fun onAppForegrounded() {
         checkForUpdates(force = false)
@@ -283,7 +362,8 @@ class SettingsViewModel(
                     _uiState.value = _uiState.value.copy(
                         exportStatus = ExportStatus.Complete,
                         exportMessage = "Exported ${result.entryCount} journal entries, " +
-                            "${result.dreamEntryCount} dreams, ${result.photoCount} photos, " +
+                            "${result.dreamEntryCount} dreams, ${result.customEntryCount} custom entries, " +
+                            "${result.photoCount} photos, " +
                             "and ${result.recapCount} recaps.",
                     )
                 },
@@ -454,10 +534,11 @@ class SettingsViewModel(
         private val backupRepository: BackupRepository,
         private val updateRepository: UpdateRepository,
         private val exportRepository: DiaryExportRepository,
+        private val journalRepository: JournalRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(repository, backupRepository, updateRepository, exportRepository) as T
+            SettingsViewModel(repository, backupRepository, updateRepository, exportRepository, journalRepository) as T
     }
 }
 

@@ -38,13 +38,20 @@ There are no accounts, ads, analytics, or mandatory cloud services. Your diary
 lives on your phone first. Backup is optional, self-hosted, and encrypted before
 anything leaves the device.
 
-An optional **Dream diary** can be enabled under Settings → Writing. It uses the
+An optional **Dream diary** can be enabled under Settings → Journals. It uses the
 wake-up date and mirrors the journal's writing, photos, places, favorites, list,
 calendar, media, map, and search without mixing dream content into ordinary
 days. Dream mode reshapes whichever palette you chose into a moonlit violet/blue
 variant, so it is always obvious which diary is open without adding another
 theme setting. Turning the mode off only hides it; dreams remain backed up and
 exportable.
+
+You can also create as many focused journals as you need—Workout, Gratitude,
+Travel, or anything else—without turning Mneme into several separate apps.
+Each journal has its own icon or emoji, accent palette, entries, photos, places,
+favorites, recaps, search results, and remembered navigation state. A compact
+switcher keeps them close without mixing their content. Journals you no longer
+need can be archived and restored later.
 
 ## A diary that feels like yours
 
@@ -58,7 +65,8 @@ exportable.
   photo, search with Android's built-in geocoder, or let you place a pin
   manually. The map uses MapLibre and keyless OpenFreeMap tiles.
 - **Your own monthly recap.** Look back in your words instead of receiving an
-  algorithmic summary of your life.
+  algorithmic summary of your life. Every ordinary or custom journal keeps its
+  recaps separate; Dreams intentionally do not use them.
 - **Made for the thumb.** Autosave, keyboard-aware scrolling, a compact floating
   formatting bar, and quick previous/next-day navigation keep the editor out of
   the way.
@@ -101,7 +109,7 @@ the widgets hide journal content and open Mneme through the normal unlock flow.
         <li>Immediate relock when Mneme leaves the foreground</li>
         <li>AES-256-GCM encryption before self-hosted backup</li>
         <li>Portable recovery code for restoring on a new phone</li>
-        <li>Readable HTML, Markdown, original-photo, metadata, and structured-manifest ZIP export, with dreams kept in their own folder</li>
+                        <li>Readable HTML, Markdown, original-photo, metadata, and structured-manifest ZIP export, grouped into separate journal folders</li>
         <li>No Google Maps key, account, analytics SDK, or ad SDK</li>
       </ul>
     </td>

@@ -35,7 +35,7 @@ data class AppSettings(
     val useMaterialYou: Boolean = false,
     val yesterdayPromptCutoffHour: Int = 6,
     val dreamDiaryEnabled: Boolean = false,
-    val activeEntryKind: EntryKind = EntryKind.Daily,
+    val activeJournalId: JournalId = JournalId.PRIMARY,
     val serverUrl: String = "",
     val serverToken: String = "",
     val serverConnected: Boolean = false,
@@ -72,25 +72,29 @@ class AppSettingsRepository(private val context: Context) {
     }
 
     fun setDreamDiaryEnabled(enabled: Boolean) {
-        val activeKind = if (enabled) _settings.value.activeEntryKind else EntryKind.Daily
+        val activeJournalId = if (enabled || _settings.value.activeJournalId != JournalId.DREAM) {
+            _settings.value.activeJournalId
+        } else {
+            JournalId.PRIMARY
+        }
         preferences.edit()
             .putBoolean(KEY_DREAM_DIARY_ENABLED, enabled)
-            .putString(KEY_ACTIVE_ENTRY_KIND, activeKind.storageValue)
+            .putString(KEY_ACTIVE_JOURNAL_ID, activeJournalId.storageValue)
             .apply()
         _settings.value = _settings.value.copy(
             dreamDiaryEnabled = enabled,
-            activeEntryKind = activeKind,
+            activeJournalId = activeJournalId,
         )
     }
 
-    fun setActiveEntryKind(entryKind: EntryKind) {
-        val resolved = if (entryKind == EntryKind.Dream && !_settings.value.dreamDiaryEnabled) {
-            EntryKind.Daily
+    fun setActiveJournalId(journalId: JournalId) {
+        val resolved = if (journalId == JournalId.DREAM && !_settings.value.dreamDiaryEnabled) {
+            JournalId.PRIMARY
         } else {
-            entryKind
+            journalId
         }
-        preferences.edit().putString(KEY_ACTIVE_ENTRY_KIND, resolved.storageValue).apply()
-        _settings.value = _settings.value.copy(activeEntryKind = resolved)
+        preferences.edit().putString(KEY_ACTIVE_JOURNAL_ID, resolved.storageValue).apply()
+        _settings.value = _settings.value.copy(activeJournalId = resolved)
     }
 
     fun backupNotificationPermissionAsked(): Boolean =
@@ -200,11 +204,12 @@ class AppSettingsRepository(private val context: Context) {
             .getInt(KEY_YESTERDAY_PROMPT_CUTOFF_HOUR, 6)
             .coerceIn(1, 12),
         dreamDiaryEnabled = preferences.getBoolean(KEY_DREAM_DIARY_ENABLED, false),
-        activeEntryKind = EntryKind.fromStorage(
-            preferences.getString(KEY_ACTIVE_ENTRY_KIND, EntryKind.Daily.storageValue),
-        ).takeIf { kind ->
-            kind != EntryKind.Dream || preferences.getBoolean(KEY_DREAM_DIARY_ENABLED, false)
-        } ?: EntryKind.Daily,
+        activeJournalId = JournalId.fromStorage(
+            preferences.getString(KEY_ACTIVE_JOURNAL_ID, null)
+                ?: preferences.getString(KEY_ACTIVE_ENTRY_KIND, JournalId.PRIMARY.storageValue),
+        ).takeIf { id ->
+            id != JournalId.DREAM || preferences.getBoolean(KEY_DREAM_DIARY_ENABLED, false)
+        } ?: JournalId.PRIMARY,
         serverUrl = preferences.getString(KEY_SERVER_URL, "").orEmpty(),
         serverToken = preferences.getString(KEY_SERVER_TOKEN, null)
             ?.let(::decryptToken)
@@ -298,6 +303,7 @@ class AppSettingsRepository(private val context: Context) {
         const val KEY_YESTERDAY_PROMPT_CUTOFF_HOUR = "yesterday_prompt_cutoff_hour"
         const val KEY_DREAM_DIARY_ENABLED = "dream_diary_enabled"
         const val KEY_ACTIVE_ENTRY_KIND = "active_entry_kind"
+        const val KEY_ACTIVE_JOURNAL_ID = "active_journal_id"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_SERVER_TOKEN = "server_token"
         const val KEY_SERVER_CONNECTED = "server_connected"

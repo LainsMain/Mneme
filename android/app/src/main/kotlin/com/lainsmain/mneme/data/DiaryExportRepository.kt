@@ -18,23 +18,39 @@ import kotlinx.serialization.json.put
 data class DiaryExportResult(
     val entryCount: Int,
     val dreamEntryCount: Int,
+    val customEntryCount: Int,
     val photoCount: Int,
     val recapCount: Int,
 )
 
 @Serializable
 private data class PortableDiaryManifest(
-    val format: String = "mneme-portable-export-v3",
+    val format: String = "mneme-portable-export-v4",
     val createdAt: String,
+    val journals: List<PortableJournal>,
     val entries: List<PortableEntry>,
     val photos: List<PortablePhoto>,
     val monthlyRecaps: List<PortableRecap>,
 )
 
 @Serializable
+private data class PortableJournal(
+    val id: String,
+    val role: String,
+    val title: String,
+    val iconKind: String,
+    val iconValue: String,
+    val accentPalette: String?,
+    val sortOrder: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val archivedAtEpochMillis: Long?,
+)
+
+@Serializable
 private data class PortableEntry(
     val id: String,
-    val entryKind: String,
+    val journalId: String,
     val date: String,
     val documentJson: String,
     val plainText: String,
@@ -61,6 +77,7 @@ private data class PortablePhoto(
 @Serializable
 private data class PortableRecap(
     val id: String,
+    val journalId: String,
     val yearMonth: String,
     val documentJson: String,
     val plainText: String,
@@ -77,6 +94,7 @@ class DiaryExportRepository(
     suspend fun export(destination: Uri): Result<DiaryExportResult> = withContext(Dispatchers.IO) {
         runCatching {
             val snapshot = diaryDao.exportSnapshot()
+            val journalsById = snapshot.journals.associateBy(JournalEntity::id)
             val photosByPage = snapshot.attachments.groupBy(AttachmentEntity::pageId)
             val output = requireNotNull(context.contentResolver.openOutputStream(destination)) {
                 "Android could not open the chosen export file."
@@ -87,37 +105,40 @@ class DiaryExportRepository(
                     "README.txt",
                     "Mneme diary export\nCreated $createdAt\n\n" +
                         "Open index.html in a browser, or read the Markdown files in entries/, dreams/, " +
-                        "and recaps/. " +
+                        "and journals/. " +
                         "Original photos and their metadata are in media/. manifest.json contains a complete " +
                         "machine-readable index for future tools and migrations. This archive is not encrypted.\n",
                 )
-                fun indexRows(kind: EntryKind) = snapshot.pages
-                    .filter { EntryKind.fromStorage(it.entryKind) == kind }
+                fun indexRows(journal: JournalEntity) = snapshot.pages
+                    .filter { it.journalId == journal.id }
                     .sortedByDescending(DiaryPageEntity::diaryDate)
                     .joinToString("\n") { page ->
                     "<li class=\"${if (page.isFavorite) "favorite" else ""}\">" +
                         "${if (page.isFavorite) "<span title=\"Favorite\">★</span> " else ""}" +
-                        "<a href=\"${entryDirectory(page)}/${page.diaryDate}.html\">${page.diaryDate}</a>" +
+                        "<a href=\"${entryDirectory(page, journalsById)}/${page.diaryDate}.html\">${page.diaryDate}</a>" +
                         " — ${escapeHtml(page.plainText.take(120))}</li>"
                 }
-                val dailyRows = indexRows(EntryKind.Daily)
-                val dreamRows = indexRows(EntryKind.Dream)
-                val recapRows = snapshot.recaps.sortedByDescending(MonthlyRecapEntity::yearMonth).joinToString("\n") {
-                    "<li><a href=\"recaps/${it.yearMonth}.html\">${it.yearMonth}</a></li>"
+                val journalSections = snapshot.journals.sortedBy(JournalEntity::sortOrder).joinToString("") { journal ->
+                    val recapRows = snapshot.recaps.filter { it.journalId == journal.id }
+                        .sortedByDescending(MonthlyRecapEntity::yearMonth).joinToString("\n") {
+                            "<li><a href=\"${recapDirectory(it, journalsById)}/${it.yearMonth}.html\">${it.yearMonth}</a></li>"
+                        }
+                    "<section><h2>${escapeHtml(journal.title)}${if (journal.archivedAtEpochMillis != null) " (Archived)" else ""}</h2>" +
+                        "<ul>${indexRows(journal)}</ul>" +
+                        if (recapRows.isNotBlank()) "<h3>Monthly recaps</h3><ul>$recapRows</ul></section>" else "</section>"
                 }
                 zip.writeText(
                     "index.html",
-                    htmlPage("Mneme diary", "<h1>Mneme diary</h1><h2>Entries</h2><ul>$dailyRows</ul>" +
-                        "<h2>Dreams</h2><ul>$dreamRows</ul>" +
-                        "<h2>Monthly recaps</h2><ul>$recapRows</ul>"),
+                    htmlPage("Mneme journals", "<h1>Mneme journals</h1>$journalSections"),
                 )
                 zip.writeText("manifest.json", portableManifest(snapshot, createdAt))
                 snapshot.pages.forEach { page ->
-                    val directory = entryDirectory(page)
+                    val directory = entryDirectory(page, journalsById)
+                    val mediaPrefix = if (page.journalId.startsWith("custom:")) "../../media" else "../media"
                     val document = decode(page.documentJson, page.plainText)
                     val photoLinks = photosByPage[page.id].orEmpty().joinToString("\n") { photo ->
                         val fileName = photoExportName(photo)
-                        "<figure><a href=\"../media/$fileName\"><img src=\"../media/$fileName\"></a>" +
+                        "<figure><a href=\"$mediaPrefix/$fileName\"><img src=\"$mediaPrefix/$fileName\"></a>" +
                             photo.caption.takeIf(String::isNotBlank)
                                 ?.let { "<figcaption>${escapeHtml(it)}</figcaption>" }
                                 .orEmpty() + "</figure>"
@@ -137,7 +158,7 @@ class DiaryExportRepository(
                     val photoMarkdown = photosByPage[page.id].orEmpty().joinToString("\n\n") { photo ->
                         val fileName = photoExportName(photo)
                         val caption = photo.caption.ifBlank { photo.originalFileName ?: "Photo" }
-                        "![${escapeMarkdown(caption)}](../media/$fileName)" +
+                        "![${escapeMarkdown(caption)}]($mediaPrefix/$fileName)" +
                             photo.caption.takeIf(String::isNotBlank)?.let { "\n\n_${escapeMarkdown(it)}_" }.orEmpty()
                     }
                     val favoriteMarkdown = if (page.isFavorite) "★ Favorite\n\n" else ""
@@ -158,8 +179,9 @@ class DiaryExportRepository(
                 }
                 snapshot.recaps.forEach { recap ->
                     val document = decode(recap.documentJson, recap.plainText)
-                    zip.writeText("recaps/${recap.yearMonth}.html", htmlPage("Recap ${recap.yearMonth}", "<h1>Recap ${recap.yearMonth}</h1>${renderHtml(document)}"))
-                    zip.writeText("recaps/${recap.yearMonth}.md", "# Recap ${recap.yearMonth}\n\n${renderMarkdown(document)}\n")
+                    val directory = recapDirectory(recap, journalsById)
+                    zip.writeText("$directory/${recap.yearMonth}.html", htmlPage("Recap ${recap.yearMonth}", "<h1>Recap ${recap.yearMonth}</h1>${renderHtml(document)}"))
+                    zip.writeText("$directory/${recap.yearMonth}.md", "# Recap ${recap.yearMonth}\n\n${renderMarkdown(document)}\n")
                 }
                 snapshot.attachments.forEach { photo ->
                     val fileName = photoExportName(photo)
@@ -172,12 +194,9 @@ class DiaryExportRepository(
                 }
             }
             DiaryExportResult(
-                entryCount = snapshot.pages.count {
-                    EntryKind.fromStorage(it.entryKind) == EntryKind.Daily
-                },
-                dreamEntryCount = snapshot.pages.count {
-                    EntryKind.fromStorage(it.entryKind) == EntryKind.Dream
-                },
+                entryCount = snapshot.pages.count { it.journalId == JournalId.PRIMARY.storageValue },
+                dreamEntryCount = snapshot.pages.count { it.journalId == JournalId.DREAM.storageValue },
+                customEntryCount = snapshot.pages.count { it.journalId.startsWith("custom:") },
                 photoCount = snapshot.attachments.size,
                 recapCount = snapshot.recaps.size,
             )
@@ -257,10 +276,24 @@ class DiaryExportRepository(
         json.encodeToString(
             PortableDiaryManifest(
                 createdAt = createdAt,
+                journals = snapshot.journals.map { journal ->
+                    PortableJournal(
+                        id = journal.id,
+                        role = journal.role,
+                        title = journal.title,
+                        iconKind = journal.iconKind,
+                        iconValue = journal.iconValue,
+                        accentPalette = journal.accentPalette,
+                        sortOrder = journal.sortOrder,
+                        createdAtEpochMillis = journal.createdAtEpochMillis,
+                        updatedAtEpochMillis = journal.updatedAtEpochMillis,
+                        archivedAtEpochMillis = journal.archivedAtEpochMillis,
+                    )
+                },
                 entries = snapshot.pages.map { page ->
                     PortableEntry(
                         id = page.id,
-                        entryKind = EntryKind.fromStorage(page.entryKind).storageValue,
+                        journalId = page.journalId,
                         date = page.diaryDate,
                         documentJson = page.documentJson,
                         plainText = page.plainText,
@@ -288,6 +321,7 @@ class DiaryExportRepository(
                 monthlyRecaps = snapshot.recaps.map { recap ->
                     PortableRecap(
                         id = recap.id,
+                        journalId = recap.journalId,
                         yearMonth = recap.yearMonth,
                         documentJson = recap.documentJson,
                         plainText = recap.plainText,
@@ -299,8 +333,21 @@ class DiaryExportRepository(
             ),
         )
 
-    private fun entryDirectory(page: DiaryPageEntity): String =
-        if (EntryKind.fromStorage(page.entryKind) == EntryKind.Dream) "dreams" else "entries"
+    private fun entryDirectory(page: DiaryPageEntity, journals: Map<String, JournalEntity>): String = when (page.journalId) {
+        JournalId.PRIMARY.storageValue -> "entries"
+        JournalId.DREAM.storageValue -> "dreams"
+        else -> customDirectory(requireNotNull(journals[page.journalId]))
+    }
+
+    private fun recapDirectory(recap: MonthlyRecapEntity, journals: Map<String, JournalEntity>): String =
+        if (recap.journalId == JournalId.PRIMARY.storageValue) "recaps"
+        else "${customDirectory(requireNotNull(journals[recap.journalId]))}/recaps"
+
+    private fun customDirectory(journal: JournalEntity): String {
+        val safeTitle = journal.title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "journal" }
+        val shortId = journal.id.substringAfter(':').take(8)
+        return "journals/$safeTitle-$shortId"
+    }
 
     private fun htmlPage(title: String, body: String) = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">

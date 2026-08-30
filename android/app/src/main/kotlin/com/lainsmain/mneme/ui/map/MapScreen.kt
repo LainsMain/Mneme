@@ -70,13 +70,14 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import com.lainsmain.mneme.data.EntryKind
+import com.lainsmain.mneme.data.JournalDefinition
+import com.lainsmain.mneme.data.JournalRole
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     entries: List<DaySummary>,
-    entryKind: EntryKind,
+    journal: JournalDefinition,
     onOpenDay: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,9 +92,9 @@ fun MapScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
-    var results by remember(entryKind) { mutableStateOf<List<DaySummary>?>(null) }
-    var resultsTitle by remember(entryKind) { mutableStateOf("Entries in this area") }
-    var hasCenteredOnEntries by remember(entryKind) { mutableStateOf(false) }
+    var results by remember(journal.id.storageValue) { mutableStateOf<List<DaySummary>?>(null) }
+    var resultsTitle by remember(journal.id.storageValue) { mutableStateOf("Entries in this area") }
+    var hasCenteredOnEntries by remember(journal.id.storageValue) { mutableStateOf(false) }
     var deviceTarget by remember { mutableStateOf<LatLng?>(null) }
     var locationMessage by remember { mutableStateOf<String?>(null) }
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.35f
@@ -145,7 +146,7 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(map, places, darkMap, entryKind) {
+    LaunchedEffect(map, places, darkMap, journal.id.storageValue) {
         map?.setStyle(
             Style.Builder().fromUri(if (darkMap) OPEN_FREE_MAP_DARK else OPEN_FREE_MAP_LIGHT),
         ) {
@@ -155,7 +156,7 @@ fun MapScreen(
                 activeMap.addMarker(
                     MarkerOptions()
                         .position(LatLng(place.latitude!!, place.longitude!!))
-                        .title(place.locationName ?: if (entryKind == EntryKind.Dream) "Dream location" else "Journal location")
+                        .title(place.locationName ?: if (journal.role == JournalRole.Dream) "Dream location" else "${journal.title} location")
                         .snippet(place.date.toString()),
                 )
             }
@@ -251,7 +252,7 @@ fun MapScreen(
                 ) {
                     Icon(Icons.Rounded.LocationOn, null, tint = MaterialTheme.colorScheme.primary)
                     Text(
-                        if (entryKind == EntryKind.Dream) "No dream locations yet" else "No journal locations yet",
+                        if (journal.role == JournalRole.Dream) "No dream locations yet" else "No ${journal.title.lowercase()} locations yet",
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(top = 8.dp),
                     )
